@@ -1,0 +1,57 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "hiri": "https://hiri-protocol.org/ns/",
+    "security": "https://w3id.org/security#",
+    "schema": "http://schema.org/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+
+    "ResolutionManifest": "hiri:ResolutionManifest",
+    "KeyDocument": "hiri:KeyDocument",
+    "ProofManifest": "hiri:ProofManifest",
+    "CompactionManifest": "hiri:CompactionManifest",
+
+    "version": "hiri:version",
+    "branch": "hiri:branch",
+    "timing": "hiri:timing",
+    "content": "hiri:content",
+    "chain": "hiri:chain",
+    "signature": "hiri:signature",
+    "authority": "hiri:authority",
+    "authorityType": "hiri:authorityType",
+    "activeKeys": "hiri:activeKeys",
+    "rotatedKeys": "hiri:rotatedKeys",
+    "revokedKeys": "hiri:revokedKeys",
+    "policies": "hiri:policies",
+
+    "hash": "hiri:hash",
+    "format": "hiri:format",
+    "size": "hiri:size",
+    "canonicalization": "hiri:canonicalization",
+
+    "created": {
+      "@id": "hiri:created",
+      "@type": "xsd:dateTime"
+    },
+    "validFrom": {
+      "@id": "hiri:validFrom",
+      "@type": "xsd:dateTime"
+    },
+    "validUntil": {
+      "@id": "hiri:validUntil",
+      "@type": "xsd:dateTime"
+    },
+
+    "previous": "hiri:previous",
+    "genesisHash": "hiri:genesisHash",
+    "depth": "hiri:depth",
+
+    "type": "security:type",
+    "verificationMethod": "security:verificationMethod",
+    "proofPurpose": "security:proofPurpose",
+    "proofValue": "security:proofValue",
+    "publicKeyMultibase": "security:publicKeyMultibase",
+    "controller": "security:controller",
+    "purposes": "hiri:purposes"
+  }
+}

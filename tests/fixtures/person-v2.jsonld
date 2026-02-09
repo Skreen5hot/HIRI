@@ -1,0 +1,26 @@
+{
+  "@context": {
+    "schema": "http://schema.org/",
+    "hiri": "https://hiri-protocol.org/ns/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  },
+  "@id": "hiri://key:ed25519:AUTHORITY_PLACEHOLDER/data/person-001",
+  "@type": "schema:Person",
+  "schema:name": "Dana Reeves",
+  "schema:birthDate": {
+    "@type": "xsd:date",
+    "@value": "1988-03-14"
+  },
+  "schema:address": {
+    "@type": "schema:PostalAddress",
+    "schema:addressLocality": "Seattle",
+    "schema:addressRegion": "WA",
+    "schema:addressCountry": "US"
+  },
+  "schema:jobTitle": "Principal Systems Architect",
+  "schema:worksFor": {
+    "@type": "schema:Organization",
+    "schema:name": "Cascade Infrastructure Labs"
+  },
+  "schema:email": "d.reeves@cascadeinfra.example"
+}
