@@ -1,0 +1,47 @@
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "description": "Quarterly sync for all engineering teams.",
+  "duration": {
+    "uncertainty": {
+      "@type": "Uncertainty",
+      "reason": "Cannot compute duration without endDate",
+      "references": [
+        "endDate"
+      ],
+      "status": "unknown"
+    }
+  },
+  "endDate": null,
+  "eventStatus": "https://schema.org/EventScheduled",
+  "location": {
+    "@type": "Place",
+    "address": {
+      "@type": "PostalAddress",
+      "addressLocality": "San Jose",
+      "addressRegion": "CA",
+      "streetAddress": "100 Tech Drive"
+    },
+    "name": "Main Conference Room"
+  },
+  "name": "Quarterly Planning Meeting",
+  "organizer": {
+    "@type": "Organization",
+    "name": "Engineering Dept"
+  },
+  "provenance": {
+    "@type": "Provenance",
+    "kernelVersion": "0.1.0",
+    "rulesApplied": [
+      "normalize-event-name",
+      "trim-description",
+      "infer-location-type",
+      "infer-address-type",
+      "normalize-organizer-name",
+      "normalize-event-status",
+      "annotate-missing-end-date",
+      "annotate-missing-duration"
+    ]
+  },
+  "startDate": "2025-03-15T09:00:00"
+}

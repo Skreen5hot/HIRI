@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run spec tests
+        run: npm test -- --write-json
+
+      - name: Run kernel purity check
+        run: npm run test:purity
+
+      - name: Verify CLI
+        run: |
+          node dist/kernel/index.js examples/input.jsonld > /dev/null
+          echo "CLI verification: OK"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec-test-results
+          path: unit-test-results.json
+
+      - name: Add test summary
+        if: always()
+        run: |
+          if [ -f unit-test-results.json ]; then
+            echo "## Spec Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            TOTAL=$(jq '.summary.totalFiles' unit-test-results.json)
+            PASSED=$(jq '.summary.filesPassed' unit-test-results.json)
+            TESTS=$(jq '.summary.totalTests' unit-test-results.json)
+            TESTS_PASSED=$(jq '.summary.testsPassed' unit-test-results.json)
+            echo "- **Files**: $PASSED/$TOTAL passed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Tests**: $TESTS_PASSED/$TESTS passed" >> $GITHUB_STEP_SUMMARY
+          fi

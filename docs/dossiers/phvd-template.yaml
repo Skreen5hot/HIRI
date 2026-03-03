@@ -1,0 +1,73 @@
+# Pre-Demo Human Validation Dossier (PHVD)
+
+# Role: Act as the Product Owner.
+# Context: The Lead Developer has successfully implemented the feature [Feature Name/Epic] and all automated tests have passed. However, before we present this to the Subject Matter Expert (SME) for demo validation, we must expose the system's underlying assumptions and human alignment risks.
+
+# Task: > 1. Review the original User Story and the newly committed code.
+# 2. Generate a Pre-Demo Human Validation Dossier using the exact YAML schema defined in .barcode/phvd-template.yaml.
+
+# Constraints:
+
+# Be ruthlessly analytical in the assumption_ledger. What did you implicitly assume about the user's technical literacy, environment, or data hygiene to write this code?
+
+# Limit human_journeys to maximum 3 scenarios. Keep them grounded in reality.
+
+# The sme_challenge_questions must be adversarial. Frame them to actively hunt for business logic flaws or workflow mismatches. Do not ask "Does this look good?" Ask "In what real-world scenario would this default behavior be dangerous or annoying?"
+
+# Output: Output ONLY valid YAML. Do not include conversational filler. Save the output to docs/dossiers/PHVD-[Date]-[FeatureName].yaml.
+
+
+schema_version: "1.0"
+feature_name: ""
+ticket_or_epic_ref: ""
+generation_date: ""
+
+behavioral_delta:
+  description: "Summary of how the system's behavior has changed."
+  new_behaviors:
+    - ""
+  changed_behaviors:
+    - ""
+  removed_behaviors:
+    - ""
+
+human_journeys:
+  description: "3-5 critical narratives of the human experience."
+  scenarios:
+    - scenario_name: ""
+      user_goal: ""
+      step_by_step_experience:
+        - ""
+      potential_confusion_points:
+        - ""
+
+assumption_ledger:
+  description: "The implicit beliefs the AI held while designing the solution."
+  user_assumptions: 
+    - "" # e.g., "Assumed user knows their account number."
+  data_shape_assumptions:
+    - "" # e.g., "Assumed the API will never return a null array."
+  domain_semantics_assumptions:
+    - "" # e.g., "Assumed 'Active' means currently logged in, not just paying."
+  system_invariants_relied_upon:
+    - ""
+
+non_logical_risk_scan:
+  description: "Risks related to human perception, not code compilation."
+  ux_friction_risks:
+    - ""
+  performance_perception_risks:
+    - ""
+  misinterpretation_risks:
+    - ""
+  integration_risks:
+    - ""
+
+sme_challenge_questions:
+  description: "5 highly specific questions designed to invalidate our assumptions."
+  questions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""

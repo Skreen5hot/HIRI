@@ -1,0 +1,6 @@
+{
+  "@context": "https://schema.org",
+  "@type": "Thing",
+  "name": "Example Input",
+  "description": "A trivial JSON-LD document for demonstrating the kernel transform."
+}

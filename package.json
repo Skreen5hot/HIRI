@@ -1,0 +1,39 @@
+{
+  "name": "json-ld-deterministic-service-template",
+  "version": "0.1.0",
+  "description": "A minimal template for building deterministic JSON-LD transformation services",
+  "type": "module",
+  "main": "dist/kernel/index.js",
+  "types": "dist/kernel/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "build:tests": "tsc -p tsconfig.test.json",
+    "start": "node dist/kernel/index.js",
+    "test": "npm run build:tests && node dist-tests/tests/run-tests.js",
+    "test:purity": "npm run build:tests && node dist-tests/scripts/ensure-kernel-purity.js",
+    "clean": "rimraf dist dist-tests"
+  },
+  "keywords": [
+    "json-ld",
+    "deterministic",
+    "edge-computing",
+    "architecture",
+    "offline-first",
+    "template"
+  ],
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "homepage": "",
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "rimraf": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
