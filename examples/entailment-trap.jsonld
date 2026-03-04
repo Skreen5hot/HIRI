@@ -1,0 +1,19 @@
+{
+  "@context": {
+    "schema": "http://schema.org/",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "ex": "http://example.org/test/"
+  },
+  "@graph": [
+    {
+      "@id": "ex:SoftwareArchitect",
+      "@type": "rdfs:Class",
+      "rdfs:subClassOf": { "@id": "schema:Person" }
+    },
+    {
+      "@id": "ex:testSubject",
+      "@type": "ex:SoftwareArchitect",
+      "schema:name": "Test Subject"
+    }
+  ]
+}

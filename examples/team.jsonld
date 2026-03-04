@@ -1,0 +1,26 @@
+{
+  "@context": {
+    "schema": "http://schema.org/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  },
+  "@graph": [
+    {
+      "@id": "hiri://key:ed25519:AUTHORITY_PLACEHOLDER/data/person-001",
+      "@type": "schema:Person",
+      "schema:name": "Dana Reeves",
+      "schema:jobTitle": "Systems Architect"
+    },
+    {
+      "@id": "hiri://key:ed25519:AUTHORITY_PLACEHOLDER/data/person-002",
+      "@type": "schema:Person",
+      "schema:name": "Morgan Chen",
+      "schema:jobTitle": "Protocol Engineer"
+    },
+    {
+      "@id": "hiri://key:ed25519:AUTHORITY_PLACEHOLDER/data/person-003",
+      "@type": "schema:Person",
+      "schema:name": "Ava Okonkwo",
+      "schema:jobTitle": "Cryptography Lead"
+    }
+  ]
+}

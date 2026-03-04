@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HIRI Protocol — Developer Guide</title>
+  <meta name="description" content="HIRI Protocol Developer Guide: Architecture, API reference, and step-by-step walkthrough of key generation, signing, chaining, resolution, and querying.">
+  <style>
+    :root {
+      --bg: #0e1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #1f6feb;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --code-bg: #1c2128;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.15s;
+    }
+    nav a:hover { color: var(--accent); }
+    nav a.active { color: var(--accent); font-weight: 600; }
+
+    nav .brand {
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 1rem;
+      margin-right: 1rem;
+    }
+
+    .layout {
+      display: flex;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .sidebar {
+      width: 240px;
+      padding: 2rem 1rem 2rem 1.5rem;
+      position: sticky;
+      top: 48px;
+      height: calc(100vh - 48px);
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .sidebar h3 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      margin-top: 1.25rem;
+    }
+    .sidebar h3:first-child { margin-top: 0; }
+
+    .sidebar a {
+      display: block;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 0.2rem 0;
+      transition: color 0.15s;
+    }
+    .sidebar a:hover { color: var(--accent); }
+
+    .content {
+      flex: 1;
+      padding: 2rem 2rem 4rem;
+      max-width: 900px;
+      min-width: 0;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+    }
+
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-top: 3rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-top: 2rem;
+      margin-bottom: 0.75rem;
+      color: var(--text);
+    }
+
+    p { margin-bottom: 1rem; }
+
+    code {
+      background: var(--code-bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.88em;
+      color: var(--accent);
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin-bottom: 1.5rem;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+      color: var(--text);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: inherit;
+      color: inherit;
+    }
+
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--surface);
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+      border-radius: 0 4px 4px 0;
+      font-size: 0.92rem;
+    }
+
+    .callout.warning {
+      border-left-color: var(--yellow);
+    }
+
+    .callout.success {
+      border-left-color: var(--green);
+    }
+
+    .diagram {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      overflow-x: auto;
+      white-space: pre;
+      color: var(--text-muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+
+    th {
+      background: var(--surface);
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+
+    td code {
+      font-size: 0.82em;
+    }
+
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-right: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .pipeline-step {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .pipeline-step .step-body {
+      flex: 1;
+    }
+
+    .pipeline-step .step-body strong {
+      color: var(--text);
+    }
+
+    .pipeline-step .step-body p {
+      margin: 0.25rem 0 0;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    ul, ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+    li { margin-bottom: 0.35rem; }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .content { padding: 1.5rem; }
+      h1 { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">HIRI Protocol</span>
+  <a href="index.html">Demo</a>
+  <a href="faq.html">FAQ</a>
+  <a href="developer-guide.html" class="active">Developer Guide</a>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h3>Getting Started</h3>
+    <a href="#overview">Protocol Overview</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#setup">Setup</a>
+
+    <h3>Walkthrough</h3>
+    <a href="#step1-identity">1. Identity &amp; Authority</a>
+    <a href="#step2-content">2. Content &amp; Signing</a>
+    <a href="#step3-chains">3. Version Chains</a>
+    <a href="#step4-resolution">4. URI Resolution</a>
+    <a href="#step5-keys">5. Key Lifecycle</a>
+    <a href="#step6-query">6. RDF &amp; SPARQL</a>
+
+    <h3>Reference</h3>
+    <a href="#api-manifest">Manifest API</a>
+    <a href="#api-signing">Signing API</a>
+    <a href="#api-chain">Chain API</a>
+    <a href="#api-resolve">Resolution API</a>
+    <a href="#api-keys">Key Lifecycle API</a>
+    <a href="#api-query">Query API</a>
+    <a href="#types">Core Types</a>
+    <a href="#constraints">Design Constraints</a>
+  </aside>
+
+  <main class="content">
+
+    <h1>Developer Guide</h1>
+    <p class="subtitle">Full protocol walkthrough with API reference and code examples.</p>
+
+    <!-- ───────────────── OVERVIEW ───────────────── -->
+
+    <h2 id="overview">Protocol Overview</h2>
+
+    <p>
+      HIRI (Hash-IRI) is a protocol for <strong>decentralized, verifiable knowledge</strong>
+      that operates local-first and offline-capable. It separates data access from truth
+      verification: anyone can host data, but only the authority's cryptographic signatures
+      make it trustworthy.
+    </p>
+
+    <p>The protocol operates through four layers:</p>
+
+    <table>
+      <tr><th>Layer</th><th>Purpose</th><th>Key Concepts</th></tr>
+      <tr><td>1. Foundation</td><td>Identity &amp; integrity</td><td>Hash-IRI identifiers, Resolution Manifests, Key Documents</td></tr>
+      <tr><td>2. Resolution</td><td>Fetch &amp; verify</td><td>Manifest fetching, signature verification, chain walking</td></tr>
+      <tr><td>3. Storeless Index</td><td>RDF indexing</td><td>Delta application, triple management, privacy-aware loading</td></tr>
+      <tr><td>4. Query</td><td>Local querying</td><td>SPARQL execution, entailment control, result verification</td></tr>
+    </table>
+
+    <div class="callout success">
+      Every operation in the protocol can be experienced in the
+      <a href="index.html" style="color:var(--accent)">interactive demo</a>, which runs
+      entirely in your browser with zero network requests.
+    </div>
+
+    <!-- ───────────────── ARCHITECTURE ───────────────── -->
+
+    <h2 id="architecture">Architecture</h2>
+
+    <p>The codebase enforces a strict three-layer architecture:</p>
+
+    <div class="diagram">Layer 0: src/kernel/      &larr; Pure computation. No I/O. No dependencies.
+Layer 1: src/composition/  &larr; Optional. Orchestration concepts.
+Layer 2: src/adapters/     &larr; Infrastructure: crypto, storage, RDF engines.
+
+Rules:
+  &bull; Layer 0 MUST NOT import from Layer 1 or Layer 2
+  &bull; All crypto operations injected via CryptoProvider interface
+  &bull; Kernel code has zero non-deterministic API calls
+  &bull; Enforced by automated purity tests (81/81 passing)</div>
+
+    <p>
+      The kernel contains all protocol logic as <strong>pure functions</strong>. No
+      <code>Date.now()</code>, <code>Math.random()</code>, <code>fetch()</code>, or file
+      system access. Timestamps, randomness, and I/O are always injected as parameters.
+    </p>
+
+    <!-- ───────────────── SETUP ───────────────── -->
+
+    <h2 id="setup">Setup</h2>
+
+    <pre><code># Clone and install
+git clone &lt;repository-url&gt;
+cd hiri
+npm install
+
+# Run all tests (81/81)
+npm test
+
+# Run kernel purity check
+npm run test:purity
+
+# Build the browser demo
+npm run build:demo</code></pre>
+
+    <div class="callout">
+      <strong>Requirements:</strong> Node.js 18+ with ESM support. The project uses
+      TypeScript strict mode, ES2022 target, and NodeNext module resolution.
+      All imports use <code>.js</code> extensions per ESM convention.
+    </div>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!--         PROTOCOL WALKTHROUGH                -->
+    <!-- ═══════════════════════════════════════════ -->
+
+    <h2 id="step1-identity">Step 1: Identity &amp; Authority</h2>
+
+    <p>
+      Every HIRI identity starts with an Ed25519 keypair. The <strong>authority</strong> is
+      derived from the public key — a deterministic, human-readable identifier that serves
+      as the root of trust.
+    </p>
+
+    <pre><code>import { generateKeypair } from "./adapters/crypto/ed25519.js";
+import { deriveAuthorityAsync } from "./kernel/authority.js";
+import { defaultCryptoProvider } from "./adapters/crypto/provider.js";
+
+// Generate an Ed25519 keypair
+const keypair = await generateKeypair("key-1");
+
+// Derive authority: hash(publicKey) &rarr; base58 &rarr; truncate 20 chars
+const authority = await deriveAuthorityAsync(
+  keypair.publicKey,
+  keypair.algorithm,
+  defaultCryptoProvider,
+);
+
+// Result: "key:ed25519:FTVfKaT7wJHVywEPbGCG"
+// URI:    "hiri://key:ed25519:FTVfKaT7wJHVywEPbGCG"</code></pre>
+
+    <div class="callout">
+      <strong>Authority derivation is deterministic:</strong> the same public key always
+      produces the same authority string. This means anyone can verify that a URI belongs
+      to a specific key by re-deriving the authority from the public key.
+    </div>
+
+    <!-- ───────────────── STEP 2 ───────────────── -->
+
+    <h2 id="step2-content">Step 2: Content &amp; Signing</h2>
+
+    <p>
+      Content is signed through a pipeline: canonicalize, hash, build manifest, sign.
+      The manifest is the trust anchor — it binds content to an identity with a
+      cryptographic signature.
+    </p>
+
+    <div class="pipeline-step">
+      <span class="step-num">1</span>
+      <div class="step-body">
+        <strong>Canonicalize</strong> content via JCS (RFC 8785)
+        <p>Deterministic JSON serialization ensures the same object always produces the same bytes.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <span class="step-num">2</span>
+      <div class="step-body">
+        <strong>Hash</strong> the canonical bytes (SHA-256)
+        <p>Produces a content-addressed identifier: <code>sha256:e08da327...</code></p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <span class="step-num">3</span>
+      <div class="step-body">
+        <strong>Build unsigned manifest</strong>
+        <p>Embeds content hash, format, size, version, branch, and timing metadata.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <span class="step-num">4</span>
+      <div class="step-body">
+        <strong>Sign</strong> with Ed25519 key
+        <p>The manifest body (minus signature) is canonicalized and signed. Signature is multibase-encoded (z + base58).</p>
+      </div>
+    </div>
+
+    <pre><code>import { stableStringify } from "./kernel/canonicalize.js";
+import { buildUnsignedManifest } from "./kernel/manifest.js";
+import { signManifest } from "./kernel/signing.js";
+import { hashManifest } from "./kernel/chain.js";
+
+const crypto = defaultCryptoProvider;
+
+// 1. Canonicalize &amp; hash content
+const content = { "@context": { "schema": "http://schema.org/" },
+                  "@id": `hiri://${authority}/data/person`,
+                  "@type": "schema:Person",
+                  "schema:name": "Dana Reeves" };
+const canonical = stableStringify(content);
+const contentBytes = new TextEncoder().encode(canonical);
+const contentHash = await crypto.hash(contentBytes);
+
+// 2. Build unsigned manifest
+const unsigned = buildUnsignedManifest({
+  id: `hiri://${authority}/data/person`,
+  version: 1,
+  branch: "main",
+  created: "2025-01-15T00:00:00Z",
+  contentHash,
+  contentFormat: "application/ld+json",
+  contentSize: contentBytes.length,
+  canonicalization: "JCS",
+});
+
+// 3. Sign
+const signed = await signManifest(
+  unsigned, keypair, "2025-01-15T00:00:00Z", crypto
+);
+
+// 4. Hash the signed manifest (for chain linking)
+const manifestHash = await hashManifest(signed, crypto);</code></pre>
+
+    <!-- ───────────────── STEP 3 ───────────────── -->
+
+    <h2 id="step3-chains">Step 3: Version Chains</h2>
+
+    <p>
+      When content is updated, the new manifest links to its predecessor via
+      <code>hiri:chain</code>. This creates a tamper-evident history without any
+      central authority or consensus protocol.
+    </p>
+
+    <div class="diagram">V1 (genesis)     V2                V3
+┌──────────┐    ┌──────────┐    ┌──────────┐
+│ version:1│&larr;───│ version:2│&larr;───│ version:3│
+│ content:A│    │ content:B│    │ content:C│
+│ no chain │    │ prev: V1 │    │ prev: V2 │
+│          │    │ genesis:V1│    │ genesis:V1│
+│          │    │ depth: 2 │    │ depth: 3 │
+│          │    │ delta:A&rarr;B│    │ delta:B&rarr;C│
+└──────────┘    └──────────┘    └──────────┘</div>
+
+    <p>Chain validation checks six rules at each link:</p>
+
+    <ol>
+      <li><strong>ID consistency</strong> — same <code>@id</code> across all manifests</li>
+      <li><strong>Version monotonicity</strong> — each version &gt; previous version</li>
+      <li><strong>Previous hash</strong> — <code>chain.previous</code> matches computed hash of predecessor</li>
+      <li><strong>Genesis immutability</strong> — <code>chain.genesisHash</code> is constant throughout the chain</li>
+      <li><strong>Depth accuracy</strong> — <code>chain.depth</code> increments correctly</li>
+      <li><strong>Branch consistency</strong> — <code>chain.previousBranch</code> matches predecessor's branch</li>
+    </ol>
+
+    <pre><code>import { validateChainLink, verifyChain } from "./kernel/chain.js";
+
+// Validate a single link
+const linkResult = await validateChainLink(v2Manifest, v1Manifest, crypto);
+// { valid: true } or { valid: false, reason: "..." }
+
+// Walk the full chain from head to genesis
+const chainResult = await verifyChain(
+  headManifest,
+  publicKey,
+  async (hash) =&gt; storage.get(hash),  // manifest fetcher
+  async (hash) =&gt; storage.get(hash),  // content fetcher
+  crypto,
+);
+// { valid: true, depth: 3, warnings: [], manifests: [...] }</code></pre>
+
+    <h3>Deltas</h3>
+
+    <p>
+      Each chain link can include a <strong>JSON Patch delta</strong> (RFC 6902) describing
+      what changed. During chain walking, the resolver tries the delta path first. If the
+      delta produces content whose hash doesn't match, it falls back to fetching full content.
+    </p>
+
+    <pre><code>import { buildDelta, verifyDelta } from "./kernel/delta.js";
+import { applyPatch } from "./kernel/json-patch.js";
+
+// Build delta metadata
+const { delta, serialized } = await buildDelta(
+  patchOperations, previousContentHash, crypto
+);
+
+// Verify: apply patch, hash result, compare to expected
+const result = await verifyDelta(
+  delta, patchOperations, previousContentBytes,
+  currentContentHash, crypto
+);</code></pre>
+
+    <!-- ───────────────── STEP 4 ───────────────── -->
+
+    <h2 id="step4-resolution">Step 4: URI Resolution</h2>
+
+    <p>
+      The <code>resolve()</code> function is the core entry point for consumers. Given a
+      HIRI URI, a storage adapter, and verification parameters, it returns verified content
+      or throws a typed error.
+    </p>
+
+    <div class="pipeline-step">
+      <span class="step-num">1</span>
+      <div class="step-body">
+        <strong>Parse URI</strong>
+        <p><code>hiri://key:ed25519:FTVf.../data/person</code> &rarr; authority, type, identifier</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <span class="step-num">2</span>
+      <div class="step-body">
+        <strong>Fetch &amp; verify manifest</strong>
+        <p>Retrieve manifest bytes by hash, verify computed hash matches, parse JSON.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <span class="step-num">3</span>
+      <div class="step-body">
+        <strong>Verify signature</strong>
+        <p>Cryptographic Ed25519 verification against the authority's public key.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <span class="step-num">4</span>
+      <div class="step-body">
+        <strong>Walk chain</strong> (if chained)
+        <p>Traverse <code>chain.previous</code> links back to genesis, verifying each link.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <span class="step-num">5</span>
+      <div class="step-body">
+        <strong>Fetch &amp; verify content</strong>
+        <p>Retrieve content bytes by hash, verify hash matches manifest's <code>content.hash</code>.</p>
+      </div>
+    </div>
+
+    <pre><code>import { resolve, ResolutionError } from "./kernel/resolve.js";
+
+try {
+  const result = await resolve(
+    "hiri://key:ed25519:FTVf.../data/person",
+    storageAdapter,
+    {
+      crypto: defaultCryptoProvider,
+      publicKey: keypair.publicKey,
+      manifestHash: "sha256:4a457177...",
+      // Optional: key lifecycle
+      keyDocument: keyDoc,
+      verificationTime: "2025-09-01T00:00:00Z",
+    },
+  );
+
+  // result.content     — Uint8Array of verified bytes
+  // result.contentHash — "sha256:..."
+  // result.manifest    — the signed manifest
+  // result.authority   — derived authority string
+  // result.warnings    — key lifecycle warnings (if any)
+} catch (e) {
+  if (e instanceof ResolutionError) {
+    // e.code: "STORAGE_CORRUPTION" | "SIGNATURE_VERIFICATION_FAILED"
+    //       | "MANIFEST_NOT_FOUND" | "AUTHORITY_MISMATCH" | ...
+  }
+}</code></pre>
+
+    <p>
+      The resolver is storage-agnostic: it works identically with <code>InMemoryStorageAdapter</code>,
+      <code>FileSystemAdapter</code>, or any custom adapter implementing <code>get(hash)</code> and
+      <code>put(hash, bytes)</code>. The <a href="index.html" style="color:var(--accent)">demo's Tab D</a>
+      proves byte-identical results across adapters with different latencies.
+    </p>
+
+    <!-- ───────────────── STEP 5 ───────────────── -->
+
+    <h2 id="step5-keys">Step 5: Key Lifecycle</h2>
+
+    <p>
+      HIRI supports key rotation and revocation through <strong>Key Documents</strong>.
+      A Key Document declares which keys are active, rotated (with grace periods),
+      or revoked (with retroactive invalidation).
+    </p>
+
+    <h3>Key States</h3>
+
+    <table>
+      <tr><th>Status</th><th>Meaning</th><th>Manifests Signed By This Key</th></tr>
+      <tr><td><code>active</code></td><td>Key is currently valid</td><td>Accepted</td></tr>
+      <tr><td><code>rotated-grace</code></td><td>Key was rotated, within grace period</td><td>Accepted with warning</td></tr>
+      <tr><td><code>rotated-expired</code></td><td>Key was rotated, grace period expired</td><td>Rejected</td></tr>
+      <tr><td><code>revoked</code></td><td>Key was revoked (compromise suspected)</td><td>Rejected after <code>manifestsInvalidAfter</code></td></tr>
+      <tr><td><code>unknown</code></td><td>Key not found in Key Document</td><td>Rejected</td></tr>
+    </table>
+
+    <h3>Rotation Proof</h3>
+
+    <p>
+      Key rotation requires a <strong>dual-signature proof</strong>: both the old key and the
+      new key must sign a rotation claim. This prevents unauthorized rotation.
+    </p>
+
+    <pre><code>import { resolveSigningKey, verifyRotationProof } from "./kernel/key-lifecycle.js";
+import { buildKeyDocument } from "./kernel/manifest.js";
+import { signKeyDocument } from "./kernel/signing.js";
+
+// Resolve key status at a specific point in time
+const result = resolveSigningKey(manifest, keyDocument, "2025-09-01T00:00:00Z");
+// { keyStatus: "rotated-grace", valid: true, keyId: "key-1",
+//   warning: "Signed by rotated key within grace period" }
+
+// Verify rotation proof (dual signatures)
+const proofValid = await verifyRotationProof(rotatedKey, keyDocument, crypto);</code></pre>
+
+    <div class="callout">
+      <strong>Try it live:</strong> The <a href="index.html" style="color:var(--accent)">demo's Tab A</a>
+      has a Mock Clock slider that lets you drag through time and watch key statuses
+      transition: <code>active</code> &rarr; <code>rotated-grace</code> &rarr; <code>rotated-expired</code>.
+    </div>
+
+    <!-- ───────────────── STEP 6 ───────────────── -->
+
+    <h2 id="step6-query">Step 6: RDF &amp; SPARQL Querying</h2>
+
+    <p>
+      Verified content (JSON-LD) can be loaded into an in-memory RDF graph and queried
+      with SPARQL. The graph engine runs locally — no database server required.
+    </p>
+
+    <pre><code>import { OxigraphRDFStore } from "./adapters/rdf/oxigraph-store.js";
+
+// Create an in-memory RDF store
+const store = new OxigraphRDFStore();
+
+// Load verified JSON-LD content
+await store.load(contentBytes, "application/ld+json", `hiri://${authority}/`);
+
+// Execute SPARQL
+const result = await store.query(
+  `SELECT ?name WHERE { ?s &lt;http://schema.org/name&gt; ?name }`,
+  store,
+);
+// result.bindings = [{ name: { type: "literal", value: "Dana Reeves" } }]</code></pre>
+
+    <h3>Entailment Control</h3>
+
+    <p>
+      HIRI defaults to entailment mode <code>"none"</code>: no RDFS/OWL inference is applied.
+      This ensures deterministic, auditable query results. Even if a dataset declares
+      <code>rdfs:subClassOf</code> relationships, they are <strong>not followed</strong>
+      unless explicitly requested.
+    </p>
+
+    <pre><code>// The entailment trap: SoftwareArchitect subClassOf Person
+// Under mode="none":
+// SELECT ?s WHERE { ?s a schema:Person }            &rarr; 0 results
+// SELECT ?s WHERE { ?s a ex:SoftwareArchitect }     &rarr; 1 result
+
+import { resolveEntailmentMode } from "./kernel/graph-builder.js";
+
+const mode = resolveEntailmentMode(manifest["hiri:semantics"]);
+// "none" (default) | "materialized" | "runtime"</code></pre>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!--              API REFERENCE                  -->
+    <!-- ═══════════════════════════════════════════ -->
+
+    <h2 id="api-manifest">API: Manifest Construction</h2>
+
+    <table>
+      <tr><th>Function</th><th>Signature</th><th>Description</th></tr>
+      <tr>
+        <td><code>buildUnsignedManifest</code></td>
+        <td><code>(params: ManifestParams) &rarr; UnsignedManifest</code></td>
+        <td>Build an unsigned ResolutionManifest. Pure, synchronous.</td>
+      </tr>
+      <tr>
+        <td><code>buildKeyDocument</code></td>
+        <td><code>(params: KeyDocumentParams) &rarr; UnsignedKeyDocument</code></td>
+        <td>Build an unsigned KeyDocument. Pure, synchronous.</td>
+      </tr>
+      <tr>
+        <td><code>prepareContent</code></td>
+        <td><code>(jsonLd, placeholder, authority) &rarr; string</code></td>
+        <td>Replace authority placeholder and canonicalize via JCS.</td>
+      </tr>
+    </table>
+
+    <h2 id="api-signing">API: Signing &amp; Verification</h2>
+
+    <table>
+      <tr><th>Function</th><th>Signature</th><th>Description</th></tr>
+      <tr>
+        <td><code>signManifest</code></td>
+        <td><code>(unsigned, key, timestamp, crypto) &rarr; Promise&lt;ResolutionManifest&gt;</code></td>
+        <td>Sign a manifest with Ed25519. Returns signed manifest with <code>hiri:signature</code>.</td>
+      </tr>
+      <tr>
+        <td><code>verifyManifest</code></td>
+        <td><code>(manifest, publicKey, crypto) &rarr; Promise&lt;boolean&gt;</code></td>
+        <td>Verify manifest signature against a public key.</td>
+      </tr>
+      <tr>
+        <td><code>signKeyDocument</code></td>
+        <td><code>(unsigned, key, timestamp, crypto) &rarr; Promise&lt;KeyDocument&gt;</code></td>
+        <td>Sign a Key Document.</td>
+      </tr>
+      <tr>
+        <td><code>verifyKeyDocument</code></td>
+        <td><code>(doc, publicKey, crypto) &rarr; Promise&lt;boolean&gt;</code></td>
+        <td>Verify Key Document signature.</td>
+      </tr>
+    </table>
+
+    <h2 id="api-chain">API: Chain Validation</h2>
+
+    <table>
+      <tr><th>Function</th><th>Signature</th><th>Description</th></tr>
+      <tr>
+        <td><code>hashManifest</code></td>
+        <td><code>(manifest, crypto) &rarr; Promise&lt;string&gt;</code></td>
+        <td>SHA-256 hash of the complete signed manifest.</td>
+      </tr>
+      <tr>
+        <td><code>validateChainLink</code></td>
+        <td><code>(current, previous, crypto) &rarr; Promise&lt;ChainValidation&gt;</code></td>
+        <td>Validate a single chain link (6 rules).</td>
+      </tr>
+      <tr>
+        <td><code>verifyChain</code></td>
+        <td><code>(head, publicKey, fetchManifest, fetchContent, crypto) &rarr; Promise&lt;ChainWalkResult&gt;</code></td>
+        <td>Walk chain head-to-genesis, verifying signatures and links.</td>
+      </tr>
+      <tr>
+        <td><code>verifyChainWithKeyLifecycle</code></td>
+        <td><code>(head, keyDoc, time, fetchManifest, fetchContent, crypto) &rarr; Promise&lt;ChainWalkResult&gt;</code></td>
+        <td>Walk chain with key lifecycle awareness. No short-circuit on failure.</td>
+      </tr>
+    </table>
+
+    <h2 id="api-resolve">API: Resolution</h2>
+
+    <table>
+      <tr><th>Function</th><th>Signature</th><th>Description</th></tr>
+      <tr>
+        <td><code>resolve</code></td>
+        <td><code>(uri, storage, options) &rarr; Promise&lt;VerifiedContent&gt;</code></td>
+        <td>Full resolution pipeline: parse URI, verify manifest, walk chain, fetch content.</td>
+      </tr>
+    </table>
+
+    <p><strong>ResolveOptions:</strong></p>
+    <ul>
+      <li><code>crypto</code> — CryptoProvider instance</li>
+      <li><code>publicKey</code> — Uint8Array of the authority's public key</li>
+      <li><code>manifestHash</code> — hash of the head manifest to resolve</li>
+      <li><code>keyDocument?</code> — optional Key Document for lifecycle-aware verification</li>
+      <li><code>verificationTime?</code> — ISO 8601 timestamp for key status evaluation</li>
+    </ul>
+
+    <p><strong>ResolutionError codes:</strong></p>
+    <ul>
+      <li><code>MANIFEST_NOT_FOUND</code> — manifest hash not in storage</li>
+      <li><code>STORAGE_CORRUPTION</code> — content hash mismatch</li>
+      <li><code>SIGNATURE_VERIFICATION_FAILED</code> — signature doesn't match public key</li>
+      <li><code>AUTHORITY_MISMATCH</code> — URI authority doesn't match derived authority</li>
+      <li><code>CHAIN_VERIFICATION_FAILED</code> — chain walk found invalid link</li>
+    </ul>
+
+    <h2 id="api-keys">API: Key Lifecycle</h2>
+
+    <table>
+      <tr><th>Function</th><th>Signature</th><th>Description</th></tr>
+      <tr>
+        <td><code>resolveSigningKey</code></td>
+        <td><code>(manifest, keyDoc, verificationTime) &rarr; KeyVerificationResult</code></td>
+        <td>Determine key status: active, rotated-grace, rotated-expired, revoked, unknown.</td>
+      </tr>
+      <tr>
+        <td><code>verifyManifestWithKeyLifecycle</code></td>
+        <td><code>(manifest, keyDoc, time, crypto) &rarr; Promise&lt;KeyVerificationResult&gt;</code></td>
+        <td>Resolve key status + cryptographic signature verification.</td>
+      </tr>
+      <tr>
+        <td><code>verifyRotationProof</code></td>
+        <td><code>(rotatedKey, keyDoc, crypto) &rarr; Promise&lt;boolean&gt;</code></td>
+        <td>Verify dual-signature rotation proof (old-key + new-key).</td>
+      </tr>
+    </table>
+
+    <h2 id="api-query">API: Query Execution</h2>
+
+    <table>
+      <tr><th>Function</th><th>Signature</th><th>Description</th></tr>
+      <tr>
+        <td><code>buildGraph</code></td>
+        <td><code>(content, format, baseURI, config, indexFactory) &rarr; Promise&lt;RDFIndex&gt;</code></td>
+        <td>Load verified content into an RDF index with entailment control.</td>
+      </tr>
+      <tr>
+        <td><code>resolveEntailmentMode</code></td>
+        <td><code>(semantics?) &rarr; EntailmentMode</code></td>
+        <td>Extract entailment mode from manifest semantics. Default: <code>"none"</code>.</td>
+      </tr>
+      <tr>
+        <td><code>executeQuery</code></td>
+        <td><code>(sparql, index, engine) &rarr; Promise&lt;QueryResult&gt;</code></td>
+        <td>Execute SPARQL query against an RDF index.</td>
+      </tr>
+    </table>
+
+    <!-- ───────────────── TYPES ───────────────── -->
+
+    <h2 id="types">Core Types</h2>
+
+    <table>
+      <tr><th>Type</th><th>Purpose</th></tr>
+      <tr><td><code>CryptoProvider</code></td><td>Injected crypto interface: <code>hash(bytes)</code>, <code>sign(bytes, key)</code>, <code>verify(bytes, sig, key)</code></td></tr>
+      <tr><td><code>SigningKey</code></td><td>Ed25519 key: algorithm, publicKey, privateKey, keyId</td></tr>
+      <tr><td><code>ResolutionManifest</code></td><td>Signed manifest with @context, @id, version, content, chain, delta, signature</td></tr>
+      <tr><td><code>KeyDocument</code></td><td>Key lifecycle document: activeKeys, rotatedKeys, revokedKeys, policies</td></tr>
+      <tr><td><code>StorageAdapter</code></td><td>Content-addressed storage: <code>get(hash) &rarr; Uint8Array</code>, <code>put(hash, bytes)</code></td></tr>
+      <tr><td><code>ManifestDelta</code></td><td>Delta metadata: hash, format ("json-patch"), appliesTo, operations count</td></tr>
+      <tr><td><code>ChainWalkResult</code></td><td>Chain verification result: valid, depth, warnings, manifests</td></tr>
+      <tr><td><code>KeyVerificationResult</code></td><td>Key status result: keyStatus, valid, keyId, warning</td></tr>
+      <tr><td><code>EntailmentMode</code></td><td><code>"none"</code> | <code>"materialized"</code> | <code>"runtime"</code></td></tr>
+      <tr><td><code>QueryResult</code></td><td>SPARQL result: bindings array with variable &rarr; RDFTerm mappings</td></tr>
+    </table>
+
+    <!-- ───────────────── CONSTRAINTS ───────────────── -->
+
+    <h2 id="constraints">Design Constraints</h2>
+
+    <p>These are enforced by automated tests and the purity checker:</p>
+
+    <ul>
+      <li><strong>No non-deterministic APIs in kernel:</strong> no <code>Date.now()</code>, <code>Math.random()</code>, <code>crypto.getRandomValues()</code>, <code>process.env</code>, <code>fetch</code>, <code>XMLHttpRequest</code></li>
+      <li><strong>No kernel &rarr; adapter imports:</strong> kernel code never imports from <code>src/adapters/</code></li>
+      <li><strong>Deterministic serialization:</strong> all hashing uses JCS canonicalization via <code>stableStringify()</code></li>
+      <li><strong>Multibase encoding:</strong> signatures and keys use <code>z</code> prefix + base58</li>
+      <li><strong>Timestamps as parameters:</strong> all temporal operations accept ISO 8601 strings, never call the system clock</li>
+      <li><strong>Zero runtime dependencies:</strong> only devDependencies (TypeScript, test runner, esbuild)</li>
+    </ul>
+
+    <div class="callout warning">
+      <strong>Entailment modes "materialized" and "runtime" are not yet implemented.</strong>
+      <code>buildGraph()</code> will throw if either mode is requested. Only <code>"none"</code>
+      is available in the current version. This is deliberate — inference must be explicitly
+      implemented and tested before being made available.
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

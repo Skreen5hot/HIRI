@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HIRI Protocol — Developer &amp; Business Partner Q&amp;A</title>
+  <meta name="description" content="HIRI (Hash-IRI) Protocol: A decentralized, edge-first, verifiable knowledge system. Developer and business partner Q&amp;A.">
+  <style>
+    :root {
+      --bg: #0e1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #1f6feb;
+      --question-bg: #1c2128;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 2rem;
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--accent);
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    main {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 1.5rem 3rem;
+      flex: 1;
+    }
+
+    section {
+      margin-bottom: 2.5rem;
+    }
+
+    section h2 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: var(--text);
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.25rem;
+    }
+
+    .qa {
+      margin-bottom: 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .question {
+      background: var(--question-bg);
+      padding: 0.85rem 1.15rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: default;
+    }
+
+    .answer {
+      padding: 0.85rem 1.15rem;
+      background: var(--surface);
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    footer {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+
+    footer p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-style: italic;
+    }
+
+    @media (max-width: 600px) {
+      header h1 {
+        font-size: 1.5rem;
+      }
+
+      header p, .question, .answer {
+        font-size: 0.9rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>HIRI — Developer &amp; Business Partner Q&amp;A</h1>
+  <p>
+    HIRI (Human-Interpretable, Resilient Infrastructure) is a semantic, edge-first
+    knowledge system designed to operate without mandatory servers, databases,
+    or centralized control. This document answers common technical and business
+    questions.
+  </p>
+</header>
+
+<main>
+
+  <section>
+    <h2>General Overview</h2>
+
+    <div class="qa">
+      <div class="question">What is HIRI?</div>
+      <div class="answer">
+        HIRI is a decentralized semantic knowledge system where computation,
+        reasoning, and learning occur at the edge. Knowledge is represented
+        as JSON-LD artifacts that can be published, shared, reasoned over,
+        or kept private—without requiring centralized infrastructure.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">Is HIRI a product, a platform, or a protocol?</div>
+      <div class="answer">
+        HIRI is primarily a specification and architectural model.
+        Implementations can appear as desktop apps, browser applications,
+        CLI tools, embedded systems, or server deployments, but none of those
+        are required by the core spec.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Architecture &amp; Deployment</h2>
+
+    <div class="qa">
+      <div class="question">Does HIRI require servers or cloud infrastructure?</div>
+      <div class="answer">
+        No. HIRI's canonical execution environment is a browser or a local
+        Node.js runtime. Servers, clouds, and containers are optional
+        optimizations, not architectural dependencies.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">Can HIRI run on a desktop and a server?</div>
+      <div class="answer">
+        Yes. The same specification supports both. A server deployment
+        is simply a node that is always on and reachable. A desktop
+        deployment is a node with local control and intermittent connectivity.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">What is the "Edge-Canonical" principle?</div>
+      <div class="answer">
+        It means the system must function fully without modification
+        on a single machine. Anything that cannot do so is considered
+        infrastructure, not core logic, and must be optional.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Privacy, Security, and Trust</h2>
+
+    <div class="qa">
+      <div class="question">Can a user run a HIRI node without exposing its contents?</div>
+      <div class="answer">
+        Yes. A node may participate in a network while revealing only
+        metadata, proofs, or capability claims—never raw knowledge artifacts
+        unless explicitly published.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">Can nodes collaborate without sharing private data?</div>
+      <div class="answer">
+        Yes. HIRI supports participation via cryptographic commitments,
+        hashes, summaries, or derived outputs rather than direct content sharing.
+        Knowledge can remain local while its effects propagate.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">How is hardware and local data protected?</div>
+      <div class="answer">
+        HIRI does not require privileged access, background daemons,
+        or system-level services. All execution occurs within the permissions
+        of the host environment (browser sandbox or user-level Node process).
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Knowledge &amp; Semantics</h2>
+
+    <div class="qa">
+      <div class="question">What role does JSON-LD play?</div>
+      <div class="answer">
+        JSON-LD is the canonical representation for all knowledge,
+        configuration, and inter-component contracts. This ensures
+        transparency, inspectability, and long-term interoperability.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">What is an A-Box in HIRI?</div>
+      <div class="answer">
+        The A-Box represents asserted facts and observations. In HIRI,
+        A-Boxes may be private, shared selectively, or published publicly
+        as immutable knowledge artifacts.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">Is intermediate learning considered "published"?</div>
+      <div class="answer">
+        Intermediate knowledge can be treated as first-class artifacts.
+        This enables auditability, reproducibility, and collaborative
+        reasoning without hidden model state.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Advanced Topics</h2>
+
+    <div class="qa">
+      <div class="question">Does the spec account for quantum encoding?</div>
+      <div class="answer">
+        The spec is encoding-agnostic. While it does not mandate quantum
+        representations, it does not preclude them. Any encoding that can
+        be losslessly mapped to JSON-LD can participate.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">How does HIRI handle offline or degraded operation?</div>
+      <div class="answer">
+        Offline operation is a first-class mode. Partial information,
+        deferred resolution, and explicit uncertainty are valid and expected
+        states—not failures.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Business Value</h2>
+
+    <div class="qa">
+      <div class="question">Why should organizations care about HIRI?</div>
+      <div class="answer">
+        HIRI reduces infrastructure dependency, increases data sovereignty,
+        improves auditability, and enables collaboration without forced
+        centralization—making it ideal for regulated, distributed,
+        or mission-critical environments.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">Is this suitable for government or critical systems?</div>
+      <div class="answer">
+        Yes. The architecture aligns naturally with zero-trust principles,
+        air-gapped operation, provenance tracking, and formal reasoning.
+        It is designed to be safe to propose, evaluate, and pilot.
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <p>
+    HIRI is an open specification focused on clarity, determinism,
+    and human-interpretable knowledge systems. Infrastructure is optional.
+    Meaning is not.
+  </p>
+</footer>
+
+</body>
+</html>

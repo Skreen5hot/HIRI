@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HIRI Integration Tests (I.1–I.9)</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "oxigraph": "./oxigraph-loader.js"
+    }
+  }
+  </script>
+  <style>
+    body { font-family: monospace; background: #0e1117; color: #e6edf3; padding: 2rem; }
+    .pass { color: #3fb950; }
+    .fail { color: #f85149; }
+    .info { color: #8b949e; }
+    pre { margin: 0.25rem 0 0.5rem 1.5rem; font-size: 0.85rem; color: #8b949e; }
+    h1 { font-size: 1.2rem; color: #58a6ff; margin-bottom: 1rem; }
+    #results { line-height: 1.8; }
+    #summary { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #30363d; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>HIRI Protocol — Integration Tests</h1>
+  <div id="results">Loading Oxigraph WASM...</div>
+  <div id="summary"></div>
+
+  <script type="module">
+    const resultsDiv = document.getElementById("results");
+    const summaryDiv = document.getElementById("summary");
+    let passed = 0, failed = 0;
+
+    function log(cls, msg) {
+      resultsDiv.innerHTML += `<div class="${cls}">${msg}</div>`;
+    }
+
+    function pass(msg) { log("pass", "✓ " + msg); passed++; }
+    function fail(msg, err) {
+      log("fail", "✗ " + msg);
+      if (err) log("info", "  " + (err.message || String(err)));
+      failed++;
+    }
+
+    try {
+      // Initialize Oxigraph WASM
+      const { initOxigraph } = await import("./oxigraph-loader.js");
+      await initOxigraph();
+
+      // Load demo bundle
+      const demo = await import("./demo.js");
+
+      resultsDiv.innerHTML = "";
+      log("info", "--- Integration Tests (I.1–I.9) ---\n");
+
+      // Install network monitor AFTER WASM load
+      let networkCalls = 0;
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = function(...args) { networkCalls++; return origFetch.apply(this, args); };
+      const origXHR = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(m, u, ...r) { networkCalls++; return origXHR.call(this, m, u, ...r); };
+
+      // ─── I.1: Simple Verify preset → resolve → query name ───
+      try {
+        await demo.loadPreset("simple-verify");
+        const state = demo.demoState;
+        const entry = state.latestManifest;
+        const keypair = state.primaryKeypair;
+
+        // Resolve
+        const resolved = await demo.resolve(
+          entry.manifest["@id"],
+          state.storage,
+          {
+            crypto: demo.defaultCryptoProvider,
+            publicKey: keypair.publicKey,
+            manifestHash: entry.manifestHash,
+          },
+        );
+
+        const contentStr = new TextDecoder().decode(resolved.content);
+        const contentObj = JSON.parse(contentStr);
+
+        if (contentObj["schema:name"] !== "Dana Reeves") throw new Error("Name mismatch: " + contentObj["schema:name"]);
+        if (!entry.manifest["hiri:chain"]) {
+          // Genesis — chainDepth: 1
+        }
+        pass("I.1: Simple Verify → resolve → name = 'Dana Reeves'");
+      } catch (e) { fail("I.1: Simple Verify → resolve → name = 'Dana Reeves'", e); }
+
+      // ─── I.2: Chain with Delta preset → resolve ───
+      try {
+        await demo.loadPreset("chain-delta");
+        const state = demo.demoState;
+        const head = state.manifests[state.manifests.length - 1];
+        const keypair = state.primaryKeypair;
+
+        // 3-deep chain
+        if (state.manifests.length !== 3) throw new Error("Expected 3 manifests, got " + state.manifests.length);
+        if (head.manifest["hiri:chain"].depth !== 3) throw new Error("Expected depth 3");
+
+        // Resolve head (V3 with corrupted delta)
+        const resolved = await demo.resolve(
+          head.manifest["@id"],
+          state.storage,
+          {
+            crypto: demo.defaultCryptoProvider,
+            publicKey: keypair.publicKey,
+            manifestHash: head.manifestHash,
+          },
+        );
+
+        // Content should still be correct (full content fallback)
+        const contentStr = new TextDecoder().decode(resolved.content);
+        const contentObj = JSON.parse(contentStr);
+        if (contentObj["schema:jobTitle"] !== "Chief Architect") throw new Error("Job title mismatch");
+
+        pass("I.2: Chain with Delta → 3-deep chain, correct content despite corrupted delta");
+      } catch (e) { fail("I.2: Chain with Delta → 3-deep chain, correct content", e); }
+
+      // ─── I.3: Key Rotation preset → resolve ───
+      try {
+        await demo.loadPreset("key-rotation");
+        const state = demo.demoState;
+        const head = state.manifests[state.manifests.length - 1];
+        const keypair = state.primaryKeypair;
+
+        // Resolve with key lifecycle
+        const resolved = await demo.resolve(
+          head.manifest["@id"],
+          state.storage,
+          {
+            crypto: demo.defaultCryptoProvider,
+            publicKey: keypair.publicKey,
+            manifestHash: head.manifestHash,
+            keyDocument: state.keyDocument,
+            verificationTime: "2025-09-01T00:00:00Z",
+          },
+        );
+
+        // Should have warnings about Key B being rotated (grace period)
+        if (!resolved.warnings || resolved.warnings.length === 0) {
+          throw new Error("Expected grace period warnings");
+        }
+
+        pass("I.3: Key Rotation → resolve with lifecycle warnings");
+      } catch (e) { fail("I.3: Key Rotation → resolve with lifecycle warnings", e); }
+
+      // ─── I.4: Corrupt content → resolve fails ───
+      try {
+        await demo.loadPreset("simple-verify");
+        const state = demo.demoState;
+        const entry = state.latestManifest;
+        const keypair = state.primaryKeypair;
+
+        // Corrupt content
+        const original = await state.storage.get(entry.contentHash);
+        const corrupted = new Uint8Array(original);
+        corrupted[0] = corrupted[0] ^ 0xff;
+        await state.storage.put(entry.contentHash, corrupted);
+
+        let errorCode = "";
+        try {
+          await demo.resolve(entry.manifest["@id"], state.storage, {
+            crypto: demo.defaultCryptoProvider,
+            publicKey: keypair.publicKey,
+            manifestHash: entry.manifestHash,
+          });
+        } catch (re) {
+          errorCode = re.code || "";
+        }
+
+        if (errorCode !== "STORAGE_CORRUPTION") throw new Error("Expected STORAGE_CORRUPTION, got: " + errorCode);
+        pass("I.4: Corrupt content → STORAGE_CORRUPTION error");
+      } catch (e) { fail("I.4: Corrupt content → STORAGE_CORRUPTION error", e); }
+
+      // ─── I.5: Simple Verify → SPARQL SELECT ?name ───
+      try {
+        await demo.loadPreset("simple-verify");
+        const state = demo.demoState;
+        const entry = state.latestManifest;
+
+        const store = new demo.OxigraphRDFStore();
+        await store.load(entry.contentBytes, "application/ld+json", `hiri://${state.authority}/`);
+
+        const result = await store.query(
+          `SELECT ?name WHERE { ?s <http://schema.org/name> ?name }`,
+          store,
+        );
+
+        if (result.bindings.length !== 1) throw new Error("Expected 1 binding, got " + result.bindings.length);
+        if (result.bindings[0].name.value !== "Dana Reeves") throw new Error("Expected 'Dana Reeves'");
+
+        pass("I.5: SPARQL SELECT ?name → 'Dana Reeves'");
+      } catch (e) { fail("I.5: SPARQL SELECT ?name → 'Dana Reeves'", e); }
+
+      // ─── I.6: All presets → zero HTTP requests ───
+      try {
+        // Reset counter (it should already be 0 since WASM loaded before monitor)
+        networkCalls = 0;
+
+        await demo.loadPreset("simple-verify");
+        const s1 = demo.demoState;
+        await demo.resolve(s1.latestManifest.manifest["@id"], s1.storage, {
+          crypto: demo.defaultCryptoProvider,
+          publicKey: s1.primaryKeypair.publicKey,
+          manifestHash: s1.latestManifest.manifestHash,
+        });
+
+        await demo.loadPreset("chain-delta");
+        const s2 = demo.demoState;
+        await demo.resolve(s2.latestManifest.manifest["@id"], s2.storage, {
+          crypto: demo.defaultCryptoProvider,
+          publicKey: s2.primaryKeypair.publicKey,
+          manifestHash: s2.latestManifest.manifestHash,
+        });
+
+        await demo.loadPreset("key-rotation");
+        const s3 = demo.demoState;
+        await demo.resolve(s3.latestManifest.manifest["@id"], s3.storage, {
+          crypto: demo.defaultCryptoProvider,
+          publicKey: s3.primaryKeypair.publicKey,
+          manifestHash: s3.latestManifest.manifestHash,
+          keyDocument: s3.keyDocument,
+          verificationTime: "2025-09-01T00:00:00Z",
+        });
+
+        // Query
+        const store = new demo.OxigraphRDFStore();
+        await store.load(s3.latestManifest.contentBytes, "application/ld+json", `hiri://${s3.authority}/`);
+        await store.query(`SELECT ?s WHERE { ?s ?p ?o }`, store);
+
+        if (networkCalls > 0) throw new Error(networkCalls + " network calls detected");
+        pass("I.6: Zero HTTP requests across all presets + resolve + query");
+      } catch (e) { fail("I.6: Zero HTTP requests across all presets + resolve + query", e); }
+
+      // ─── I.7: Mock Clock slider → boundary ±1s ───
+      try {
+        await demo.loadPreset("key-rotation");
+        const state = demo.demoState;
+
+        // Build a test manifest signed by Key B (rotated key)
+        const keyB = state.keypairs[1].keypair;
+        const contentStr = demo.stableStringify({ test: true });
+        const contentBytes = new TextEncoder().encode(contentStr);
+        const contentHash = await demo.defaultCryptoProvider.hash(contentBytes);
+
+        const unsigned = demo.buildUnsignedManifest({
+          id: `hiri://${state.authority}/data/test`,
+          version: 99, branch: "main",
+          created: "2025-05-01T00:00:00Z",
+          contentHash, contentFormat: "application/ld+json",
+          contentSize: contentBytes.length, canonicalization: "JCS",
+        });
+        const testManifest = await demo.signManifest(unsigned, keyB, "2025-05-01T00:00:00Z", demo.defaultCryptoProvider);
+
+        // Grace end = 2025-07-01 + P183D = 2025-12-31T00:00:00Z (from key-rotation preset)
+        // −1s: should be rotated-grace (valid)
+        const r1 = demo.resolveSigningKey(testManifest, state.keyDocument, "2025-12-30T23:59:59Z");
+        if (r1.keyStatus !== "rotated-grace") throw new Error("Expected rotated-grace, got " + r1.keyStatus);
+        if (!r1.valid) throw new Error("Expected valid at -1s");
+
+        // +1s: should be rotated-expired (rejected)
+        const r2 = demo.resolveSigningKey(testManifest, state.keyDocument, "2025-12-31T00:00:01Z");
+        if (r2.keyStatus !== "rotated-expired") throw new Error("Expected rotated-expired, got " + r2.keyStatus);
+        if (r2.valid) throw new Error("Expected rejected at +1s");
+
+        pass("I.7: Mock Clock boundary ±1s → rotated-grace / rotated-expired");
+      } catch (e) { fail("I.7: Mock Clock boundary ±1s → rotated-grace / rotated-expired", e); }
+
+      // ─── I.8: Entailment trap → Person query → 0 results ───
+      try {
+        const trap = {
+          "@context": {
+            "schema": "http://schema.org/",
+            "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+            "ex": "http://example.org/",
+          },
+          "@graph": [
+            { "@id": "ex:SoftwareArchitect", "@type": "rdfs:Class", "rdfs:subClassOf": { "@id": "schema:Person" } },
+            { "@id": "ex:testSubject", "@type": "ex:SoftwareArchitect", "schema:name": "Ada Lovelace" },
+          ],
+        };
+
+        const store = new demo.OxigraphRDFStore();
+        const trapBytes = new TextEncoder().encode(JSON.stringify(trap));
+        await store.load(trapBytes, "application/ld+json", "http://example.org/");
+
+        const personResult = await store.query(`SELECT ?s WHERE { ?s a <http://schema.org/Person> }`, store);
+        if (personResult.bindings.length !== 0) {
+          throw new Error("Expected 0 results for schema:Person under mode='none', got " + personResult.bindings.length);
+        }
+
+        const archResult = await store.query(`SELECT ?s WHERE { ?s a <http://example.org/SoftwareArchitect> }`, store);
+        if (archResult.bindings.length !== 1) {
+          throw new Error("Expected 1 result for ex:SoftwareArchitect, got " + archResult.bindings.length);
+        }
+
+        pass("I.8: Entailment trap → 0 for Person, 1 for SoftwareArchitect");
+      } catch (e) { fail("I.8: Entailment trap → 0 for Person, 1 for SoftwareArchitect", e); }
+
+      // ─── I.9: 3 adapter speeds → identical VerifiedContent ───
+      try {
+        await demo.loadPreset("simple-verify");
+        const state = demo.demoState;
+        const entry = state.latestManifest;
+        const keypair = state.primaryKeypair;
+
+        const opts = {
+          crypto: demo.defaultCryptoProvider,
+          publicKey: keypair.publicKey,
+          manifestHash: entry.manifestHash,
+        };
+
+        const r1 = await demo.resolve(entry.manifest["@id"], state.storage, opts);
+        const delayed50 = new demo.DelayedAdapter(state.storage, 50);
+        const r2 = await demo.resolve(entry.manifest["@id"], delayed50, opts);
+        const delayed500 = new demo.DelayedAdapter(state.storage, 500);
+        const r3 = await demo.resolve(entry.manifest["@id"], delayed500, opts);
+
+        // Compare byte arrays
+        const hex1 = Array.from(r1.content).map(b => b.toString(16).padStart(2, "0")).join("");
+        const hex2 = Array.from(r2.content).map(b => b.toString(16).padStart(2, "0")).join("");
+        const hex3 = Array.from(r3.content).map(b => b.toString(16).padStart(2, "0")).join("");
+
+        if (hex1 !== hex2) throw new Error("InMemory vs Delayed(50ms) differ");
+        if (hex1 !== hex3) throw new Error("InMemory vs Delayed(500ms) differ");
+
+        pass("I.9: 3 adapter speeds → byte-identical VerifiedContent");
+      } catch (e) { fail("I.9: 3 adapter speeds → byte-identical VerifiedContent", e); }
+
+    } catch (e) {
+      resultsDiv.innerHTML = `<div class="fail">Fatal: ${e.message}</div>`;
+      console.error(e);
+    }
+
+    // Summary
+    summaryDiv.innerHTML = `<span class="${failed > 0 ? "fail" : "pass"}">${passed} passed, ${failed} failed</span>`;
+  </script>
+</body>
+</html>

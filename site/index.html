@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HIRI Protocol — Interactive Demo</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "oxigraph": "./oxigraph-loader.js"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #0e1117;
+      --surface: #161b22;
+      --surface-raised: #1c2128;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #1f6feb;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --orange: #db6d28;
+      --radius: 6px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    /* ── Network Indicator ── */
+    .network-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      padding: 0.3rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-raised);
+    }
+
+    .network-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      transition: background 0.3s;
+    }
+
+    .network-dot.violated {
+      background: var(--red);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* ── Preset Selector ── */
+    .preset-select {
+      background: var(--surface-raised);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.3rem 0.5rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    .preset-select:focus { outline: 1px solid var(--accent); }
+
+    /* ── Tab Navigation ── */
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      padding: 0 1.5rem;
+    }
+
+    .tab-btn {
+      padding: 0.6rem 1.2rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover { color: var(--text); }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-label { margin-left: 0.4rem; }
+
+    /* ── Main Content ── */
+    .workspace {
+      flex: 1;
+      padding: 1.5rem;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      display: none;
+    }
+
+    .workspace.active { display: block; }
+
+    .workspace h2 {
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+
+    .workspace-desc {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-raised);
+      color: var(--text);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn:hover {
+      background: var(--border);
+      border-color: var(--text-muted);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent);
+    }
+
+    .btn-danger {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .btn-danger:hover {
+      background: rgba(248, 81, 73, 0.1);
+    }
+
+    /* ── Panels ── */
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      margin-bottom: 1rem;
+    }
+
+    .panel-header {
+      padding: 0.6rem 1rem;
+      background: var(--surface-raised);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .panel-body {
+      padding: 1rem;
+    }
+
+    .panel-body pre {
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--text-muted);
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    /* ── Under the Hood (Transparency Panel) ── */
+    .transparency {
+      margin-top: 1rem;
+    }
+
+    .transparency-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+    }
+
+    .transparency-toggle:hover { color: var(--text); }
+
+    .transparency-content {
+      display: none;
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 var(--radius) var(--radius);
+      padding: 1rem;
+      background: var(--surface);
+    }
+
+    .transparency-content.open { display: block; }
+
+    /* ── Status Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge-active { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+    .badge-grace { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+    .badge-expired { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+    .badge-revoked { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+    .badge-unknown { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
+
+    /* ── Form Elements ── */
+    .form-group {
+      margin-bottom: 0.75rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.4rem 0.6rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.85rem;
+      font-family: inherit;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    textarea.form-input {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 0.8rem;
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    /* ── Slider ── */
+    .slider-container {
+      margin: 1rem 0;
+    }
+
+    .slider-container input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* ── Results Table ── */
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    .results-table th {
+      text-align: left;
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .results-table td {
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Action Bar ── */
+    .action-bar {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+
+    /* ── Split Layout ── */
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    /* ── Loading ── */
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: opacity 0.3s;
+    }
+
+    .loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loading-text {
+      color: var(--accent);
+      font-size: 1rem;
+      margin-top: 1rem;
+    }
+
+    .loading-sub {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin-top: 0.5rem;
+    }
+
+    /* ── Warning/Info boxes ── */
+    .info-box {
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+    }
+
+    .info-box.warning {
+      background: rgba(210, 153, 34, 0.1);
+      border: 1px solid rgba(210, 153, 34, 0.3);
+      color: var(--yellow);
+    }
+
+    .info-box.error {
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      color: var(--red);
+    }
+
+    .info-box.success {
+      background: rgba(63, 185, 80, 0.1);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+      color: var(--green);
+    }
+
+    .info-box.info {
+      background: rgba(88, 166, 255, 0.1);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loading">
+    <div class="loading-text">Initializing HIRI Protocol...</div>
+    <div class="loading-sub">Loading Oxigraph WASM engine</div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>HIRI Protocol Demo</h1>
+      <nav style="display:flex;gap:1rem;margin-left:1rem">
+        <a href="faq.html" style="color:var(--text-muted);text-decoration:none;font-size:0.85rem">FAQ</a>
+        <a href="developer-guide.html" style="color:var(--text-muted);text-decoration:none;font-size:0.85rem">Developer Guide</a>
+      </nav>
+    </div>
+    <div class="header-right">
+      <div class="network-indicator" id="networkIndicator" title="Monitors fetch, XHR, and sendBeacon calls during operations">
+        <div class="network-dot" id="networkDot"></div>
+        <span id="networkLabel">Zero Network</span>
+      </div>
+      <select class="preset-select" id="presetSelect">
+        <option value="">Load Preset...</option>
+        <option value="simple-verify">Simple Verify (M1, M3, M4)</option>
+        <option value="chain-delta">Chain with Delta (M1-M4)</option>
+        <option value="key-rotation">Key Rotation (M1-M5)</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="keys">
+      A<span class="tab-label">Keys</span>
+    </button>
+    <button class="tab-btn" data-tab="build">
+      B<span class="tab-label">Build</span>
+    </button>
+    <button class="tab-btn" data-tab="query">
+      C<span class="tab-label">Query</span>
+    </button>
+    <button class="tab-btn" data-tab="resolve">
+      D<span class="tab-label">Resolve</span>
+    </button>
+  </div>
+
+  <!-- Tab A: Identity & Authority -->
+  <div class="workspace active" id="tab-keys">
+    <h2>Identity & Authority Sandbox</h2>
+    <p class="workspace-desc">Generate cryptographic identities, manage key lifecycle, and observe temporal key status transitions.</p>
+    <div id="keys-content">
+      <div class="info-box info">Generate a genesis identity to begin. All cryptographic operations happen locally in your browser.</div>
+    </div>
+  </div>
+
+  <!-- Tab B: Verifiable Knowledge Builder -->
+  <div class="workspace" id="tab-build">
+    <h2>Verifiable Knowledge Builder</h2>
+    <p class="workspace-desc">Create signed JSON-LD content, build version chains with tamper-evident deltas.</p>
+    <div id="build-content">
+      <div class="info-box info">Generate a key in Tab A first, then create and sign content here.</div>
+    </div>
+  </div>
+
+  <!-- Tab C: Storeless Oracle -->
+  <div class="workspace" id="tab-query">
+    <h2>Storeless Oracle — Query Console</h2>
+    <p class="workspace-desc">Load verified content into an in-memory RDF graph and query it with SPARQL. No database server required.</p>
+    <div id="query-content">
+      <div class="info-box info">Create signed content in Tab B, then load and query it here.</div>
+    </div>
+  </div>
+
+  <!-- Tab D: Network Simulator -->
+  <div class="workspace" id="tab-resolve">
+    <h2>Network Simulator — Resolver</h2>
+    <p class="workspace-desc">Resolve HIRI URIs against different storage backends. Inject faults to test tamper detection.</p>
+    <div id="resolve-content">
+      <div class="info-box info">Create signed content in Tab B, then resolve URIs here.</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // ── Initialize ──
+    async function init() {
+      // 1. Load Oxigraph WASM
+      const { initOxigraph } = await import("./oxigraph-loader.js");
+      await initOxigraph();
+
+      // 2. Load demo bundle
+      const demo = await import("./demo.js");
+
+      // 3. Install network monitor (after WASM load to avoid counting it)
+      let networkCallCount = 0;
+      const networkLog = [];
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = function (...args) {
+        networkCallCount++;
+        const url = typeof args[0] === "string" ? args[0] : "(Request)";
+        networkLog.push("fetch: " + url);
+        updateNetworkIndicator();
+        return originalFetch.apply(this, args);
+      };
+      const originalOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        networkCallCount++;
+        networkLog.push("XHR: " + method + " " + url);
+        updateNetworkIndicator();
+        return originalOpen.call(this, method, url, ...rest);
+      };
+      if (navigator.sendBeacon) {
+        const origBeacon = navigator.sendBeacon.bind(navigator);
+        navigator.sendBeacon = function (url, data) {
+          networkCallCount++;
+          networkLog.push("sendBeacon: " + url);
+          updateNetworkIndicator();
+          return origBeacon(url, data);
+        };
+      }
+
+      function updateNetworkIndicator() {
+        const dot = document.getElementById("networkDot");
+        const label = document.getElementById("networkLabel");
+        if (networkCallCount > 0) {
+          dot.classList.add("violated");
+          label.textContent = networkCallCount + " call" + (networkCallCount > 1 ? "s" : "") + " detected";
+        } else {
+          dot.classList.remove("violated");
+          label.textContent = "Zero Network";
+        }
+      }
+
+      // 4. Tab switching with lazy re-initialization of gated tabs
+      const tabBtns = document.querySelectorAll(".tab-btn");
+      const workspaces = document.querySelectorAll(".workspace");
+
+      tabBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          const tabId = btn.dataset.tab;
+          tabBtns.forEach(b => b.classList.remove("active"));
+          workspaces.forEach(w => w.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("tab-" + tabId).classList.add("active");
+          // Re-init gated tabs to pick up state changes from other tabs
+          if (tabId === "build") demo.initBuildTab(document.getElementById("build-content"));
+          if (tabId === "query") demo.initQueryTab(document.getElementById("query-content"));
+          if (tabId === "resolve") demo.initResolveTab(document.getElementById("resolve-content"));
+        });
+      });
+
+      // 5. Expose demo API globally
+      window.__hiri = demo;
+      window.__networkMonitor = {
+        get callCount() { return networkCallCount; },
+        reset() { networkCallCount = 0; networkLog.length = 0; updateNetworkIndicator(); },
+        get log() { return [...networkLog]; },
+      };
+
+      // 6. Initialize tab content
+      demo.initKeysTab(document.getElementById("keys-content"));
+      demo.initBuildTab(document.getElementById("build-content"));
+      demo.initQueryTab(document.getElementById("query-content"));
+      demo.initResolveTab(document.getElementById("resolve-content"));
+
+      // 7. Preset selector (wired in Step 6)
+      document.getElementById("presetSelect").addEventListener("change", async (e) => {
+        const preset = e.target.value;
+        if (!preset) return;
+        if (demo.loadPreset) {
+          await demo.loadPreset(preset);
+          // Re-init all tabs after preset load
+          demo.initKeysTab(document.getElementById("keys-content"));
+          demo.initBuildTab(document.getElementById("build-content"));
+          demo.initQueryTab(document.getElementById("query-content"));
+          demo.initResolveTab(document.getElementById("resolve-content"));
+        }
+        e.target.value = "";
+      });
+
+      // 8. Hide loading overlay
+      document.getElementById("loading").classList.add("hidden");
+    }
+
+    init().catch(e => {
+      document.getElementById("loading").innerHTML =
+        '<div class="loading-text" style="color: var(--red)">Initialization failed</div>' +
+        '<div class="loading-sub">' + e.message + '</div>';
+      console.error(e);
+    });
+  </script>
+</body>
+</html>
