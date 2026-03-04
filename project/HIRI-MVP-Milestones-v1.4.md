@@ -954,4 +954,4 @@ The MVP is complete when:
 
 ---
 
-*This document supersedes v1.2 for Milestones 3–5 and Integration. v1.3 remains the governing addendum for Milestone 1 execution detail. v1.2's Milestone 2 test matrix (tests 2.1–2.9) remains authoritative for Milestone 2.*
+*This document supersedes v1.2 for Milestones 3–5 and Integration. v1.3's Milestone 1 execution detail is considered fully implemented and the v1.3 addendum is retired. v1.2's Milestone 2 test matrix (tests 2.1–2.9) remains authoritative for Milestone 2.*

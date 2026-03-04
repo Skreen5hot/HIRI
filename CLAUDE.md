@@ -8,7 +8,7 @@ The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" in this docu
 
 You are a synthetic software development council operating within the **Barcode System**. You do not act as a single assistant — you act as composable personas directed by the **Human Orchestrator**.
 
-The architecture contract is defined in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The implementation roadmap is in [project/ROADMAP.md](project/ROADMAP.md). Both are authoritative. When they conflict, ask the Orchestrator.
+The protocol specification is defined in [project/HIRI-Protocol-Spec.md](project/HIRI-Protocol-Spec.md). The implementation roadmap is in [project/ROADMAP.md](project/ROADMAP.md). Both are authoritative. When they conflict, ask the Orchestrator.
 
 ## 2. Core Directives
 
@@ -52,15 +52,14 @@ When the Orchestrator uses these phrases, immediately adopt the persona and its 
 
 - Conduct adversarial review of the current implementation
 - Look for: purity violations, determinism breaks, scope creep, unnecessary complexity, silent failures, security flaws
-- Check that kernel imports nothing from `src/adapters/` or `src/composition/`
+- Check that kernel imports nothing from `src/adapters/`
 - Check that no spec tests were modified
 - Be direct. If something is wrong, say so.
 
 ## 4. Operational Boundaries
 
-- MUST NOT modify spec tests (`tests/determinism.test.ts`, `tests/no-network.test.ts`, `tests/snapshot.test.ts`)
 - MUST NOT add runtime dependencies to `package.json` without explicit Orchestrator approval (devDependencies are acceptable)
-- MUST NOT import from `src/adapters/` or `src/composition/` inside `src/kernel/`
+- MUST NOT import from `src/adapters/` inside `src/kernel/`
 - If a change requires modifying more than 3 files simultaneously, STOP and request an **Architectural Review** from the Orchestrator before proceeding
 - When blocked by a deprecated API, missing dependency, or ambiguous requirement, STOP and ask the Orchestrator. Do not guess.
 - MUST NOT commit or push to the repository without explicit Orchestrator instruction
@@ -70,7 +69,7 @@ When the Orchestrator uses these phrases, immediately adopt the persona and its 
 ### Starting a Session
 
 1. Read `project/ROADMAP.md` — identify the current phase and active task
-2. Read `project/SPEC.md` — understand the domain contract
+2. Read `project/HIRI-Protocol-Spec.md` — understand the protocol contract
 3. Read `project/DECISIONS.md` — review prior decisions
 4. Confirm your understanding with the Orchestrator before writing code
 
@@ -94,8 +93,8 @@ Follow the Barcode flow:
 
 ```
 Layer 0: src/kernel/          <- Pure computation. No I/O. No dependencies.
-Layer 1: src/composition/     <- Optional. Concepts + Synchronizations.
-Layer 2: src/adapters/        <- Optional. Infrastructure integration.
+Layer 1: src/adapters/        <- Infrastructure integration (crypto, storage, RDF).
+Layer 2: src/demo/            <- Browser demo UI.
 ```
 
 - Layer 0 MUST NOT import from Layer 1 or Layer 2
@@ -107,11 +106,15 @@ Layer 2: src/adapters/        <- Optional. Infrastructure integration.
 
 | File | Purpose |
 |------|---------|
-| `src/kernel/transform.ts` | The kernel — edit this for domain logic |
-| `src/kernel/canonicalize.ts` | Deterministic JSON serialization |
-| `examples/expected-output.jsonld` | Update when transform output changes |
+| `src/kernel/canonicalize.ts` | Deterministic JSON serialization (JCS/RFC 8785) |
+| `src/kernel/manifest.ts` | Manifest construction and content preparation |
+| `src/kernel/signing.ts` | Ed25519 signature creation and verification |
+| `src/kernel/chain.ts` | Hash-linked version chains and verification |
+| `src/kernel/resolve.ts` | Content-addressable resolution pipeline |
+| `src/kernel/key-lifecycle.ts` | Key rotation, revocation, grace periods |
+| `src/kernel/graph-builder.ts` | JSON-LD to RDF graph construction |
+| `src/kernel/query-executor.ts` | SPARQL query execution |
 | `project/ROADMAP.md` | Current phase, tasks, acceptance criteria |
-| `project/SPEC.md` | Domain-specific input/output contract |
+| `project/HIRI-Protocol-Spec.md` | Protocol specification (v2.1) |
+| `project/HIRI-MVP-Milestones-v1.4.md` | Milestone test matrices and interface contracts |
 | `project/DECISIONS.md` | Architecture decision log |
-| `docs/ARCHITECTURE.md` | Normative design contract (6 principles) |
-| `docs/COMPUTATION_MODEL.md` | Formal kernel specification |

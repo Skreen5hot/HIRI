@@ -1,33 +1,33 @@
 {
-  "name": "json-ld-deterministic-service-template",
+  "name": "hiri-protocol",
   "version": "0.1.0",
-  "description": "A minimal template for building deterministic JSON-LD transformation services",
+  "private": true,
+  "description": "HIRI (Hash-IRI): A decentralized, edge-first, verifiable knowledge protocol",
   "type": "module",
-  "main": "dist/kernel/index.js",
-  "types": "dist/kernel/index.d.ts",
   "scripts": {
     "build": "tsc",
     "build:tests": "tsc -p tsconfig.test.json",
-    "start": "node dist/kernel/index.js",
     "test": "npm run build:tests && node dist-tests/tests/run-tests.js",
     "test:purity": "npm run build:tests && node dist-tests/scripts/ensure-kernel-purity.js",
     "clean": "rimraf dist dist-tests",
     "build:demo": "node esbuild.config.mjs && node -e \"const fs=require('fs');fs.copyFileSync('node_modules/oxigraph/web.js','dist/oxigraph-web.js');fs.copyFileSync('node_modules/oxigraph/web_bg.wasm','dist/web_bg.wasm');console.log('Copied oxigraph WASM files')\""
   },
   "keywords": [
+    "hiri",
+    "hash-iri",
+    "decentralized",
+    "verifiable",
     "json-ld",
-    "deterministic",
-    "edge-computing",
-    "architecture",
-    "offline-first",
-    "template"
+    "semantic",
+    "edge-first",
+    "protocol"
   ],
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/Skreen5hot/HIRI.git"
   },
-  "homepage": "",
-  "author": "",
+  "homepage": "https://skreen5hot.github.io/HIRI/",
+  "author": "Skreen5hot",
   "license": "MIT",
   "devDependencies": {
     "@types/jsonld": "^1.5.15",

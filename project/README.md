@@ -1,20 +1,19 @@
-# Your Implementation
+# Project
 
-This directory is **your implementation space**. It is separate from the template's architecture documentation in `docs/`.
-
-- `docs/` defines the **architecture contract** — how the template works and what rules it enforces.
-- `project/` defines **what you are building** — your roadmap, technical spec, and decisions.
+This directory contains the governing specifications, planning documents, and decision log for the HIRI Protocol.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| [ROADMAP.md](./ROADMAP.md) | Phased plan with tasks, acceptance criteria, and scope boundaries |
-| [SPEC.md](./SPEC.md) | Technical specification for your domain-specific transform |
-| [DECISIONS.md](./DECISIONS.md) | Architecture Decision Record — log decisions so they survive between sessions |
+| [ROADMAP.md](./ROADMAP.md) | Current phase, tasks, and acceptance criteria |
+| [HIRI-Protocol-Spec.md](./HIRI-Protocol-Spec.md) | Protocol specification (v2.1) — the governing spec |
+| [HIRI-MVP-Milestones-v1.4.md](./HIRI-MVP-Milestones-v1.4.md) | Milestone definitions — test matrices, interface contracts, execution sequences |
+| [DECISIONS.md](./DECISIONS.md) | Architecture Decision Record |
+| [drafts/](./drafts/) | Future specifications not yet implemented |
 
 ## Why This Exists
 
-AI agents have no memory between sessions. These documents anchor every session to your project's current state. Before writing code, an agent should read `ROADMAP.md` to know what phase you're in and `SPEC.md` to understand the domain.
+AI agents have no memory between sessions. These documents anchor every session to the project's current state. Before writing code, an agent should read `ROADMAP.md` to know what phase we're in and `HIRI-Protocol-Spec.md` to understand the protocol contract.
 
 Keep these files updated. They are living documents, not artifacts.

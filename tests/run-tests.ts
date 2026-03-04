@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const writeJson = args.includes("--write-json") || args.includes("--json");
 
-  console.log("\n=== JSON-LD Deterministic Service Template - Spec Tests ===\n");
+  console.log("\n=== HIRI Protocol — Spec Tests ===\n");
 
   const testFiles = await findTestFiles(__dirname);
 

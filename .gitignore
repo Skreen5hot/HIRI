@@ -6,3 +6,9 @@ unit-test-results.json
 .env
 .DS_Store
 Thumbs.db
+.claude/
+*.log
+.vscode/
+.idea/
+*.swp
+*.swo

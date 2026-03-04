@@ -35,11 +35,6 @@ jobs:
       - name: Run kernel purity check
         run: npm run test:purity
 
-      - name: Verify CLI
-        run: |
-          node dist/kernel/index.js examples/input.jsonld > /dev/null
-          echo "CLI verification: OK"
-
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
