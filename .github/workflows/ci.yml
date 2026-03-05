@@ -2,14 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# Allow only one concurrent run per branch. Dev builds don't block main deployments.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "ci-${{ github.ref }}"
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -58,7 +58,7 @@ jobs:
 
   deploy:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
 
     permissions:
@@ -70,36 +70,66 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout repository
+      # --- Build main site (root) ---
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-src
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Build main site
+        run: |
+          cd main-src
+          npm ci
+          npm run build
+          npm run build:demo
 
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Build demo bundle
-        run: npm run build:demo
-
-      - name: Prepare Pages artifact
+      - name: Prepare main site artifact
         run: |
           mkdir -p _site
-          # Static site files (source-controlled in site/)
-          cp site/*.html _site/
-          cp site/oxigraph-loader.js _site/
-          # Built artifacts
-          cp dist/demo.js _site/
-          cp dist/oxigraph-web.js _site/
-          cp dist/web_bg.wasm _site/
+          cp main-src/site/*.html _site/
+          cp main-src/site/oxigraph-loader.js _site/
+          cp main-src/dist/demo.js _site/
+          cp main-src/dist/oxigraph-web.js _site/
+          cp main-src/dist/web_bg.wasm _site/
 
+      # --- Build dev site (/dev/) ---
+      - name: Checkout dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: dev-src
+        continue-on-error: true
+
+      - name: Build dev site
+        id: build-dev
+        run: |
+          cd dev-src
+          npm ci
+          npm run build
+          npm run build:demo
+        continue-on-error: true
+
+      - name: Prepare dev site artifact
+        if: steps.build-dev.outcome == 'success'
+        run: |
+          mkdir -p _site/dev
+          cp dev-src/site/*.html _site/dev/
+          cp dev-src/site/oxigraph-loader.js _site/dev/
+          cp dev-src/dist/demo.js _site/dev/
+          cp dev-src/dist/oxigraph-web.js _site/dev/
+          cp dev-src/dist/web_bg.wasm _site/dev/
+
+      # --- Deploy combined site ---
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment
