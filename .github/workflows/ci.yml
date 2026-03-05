@@ -5,6 +5,7 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:  # Manual trigger to rebuild site (updates /dev/ preview)
 
 # Allow only one concurrent run per branch. Dev builds don't block main deployments.
 concurrency:
@@ -58,7 +59,7 @@ jobs:
 
   deploy:
     needs: build-and-test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     permissions:
