@@ -2,14 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# Allow only one concurrent run per branch. Dev builds don't block main deployments.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "ci-${{ github.ref }}"
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
