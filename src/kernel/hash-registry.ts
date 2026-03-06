@@ -32,7 +32,12 @@ export class HashRegistry {
    * @throws Error if no algorithm is registered for the prefix
    */
   resolve(prefixedHash: string): HashAlgorithm {
+    // CIDv1 base32lower strings start with 'b' and have no colon
     const colonIndex = prefixedHash.indexOf(":");
+    if (colonIndex === -1 && prefixedHash.startsWith("b")) {
+      const algo = this.algos.get("cidv1");
+      if (algo) return algo;
+    }
     const prefix = colonIndex === -1 ? prefixedHash : prefixedHash.substring(0, colonIndex);
     const algo = this.algos.get(prefix);
     if (!algo) {

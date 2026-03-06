@@ -9,6 +9,28 @@
  */
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Canonicalizer Interface (implemented by kernel JCS + adapter URDNA2015)
+// ---------------------------------------------------------------------------
+
+/** A JSON-LD document loader function (§7.5). */
+export type DocumentLoader = (url: string) => Promise<{ document: object; documentUrl: string }>;
+
+/**
+ * Canonicalizes a document to deterministic bytes.
+ * JCS ignores the documentLoader. URDNA2015 passes it to jsonld.canonize().
+ */
+export interface Canonicalizer {
+  canonicalize(doc: Record<string, unknown>, documentLoader: DocumentLoader): Promise<Uint8Array>;
+}
+
+/** Resource limits for URDNA2015 canonicalization (§7.7). */
+export interface CanonicalizationLimits {
+  maxBlankNodes?: number;     // default 1000
+  maxWallClockMs?: number;    // default 5000
+  maxOutputBytes?: number;    // default 10_485_760
+}
+
 // Crypto Interfaces (implemented by adapters, injected into kernel functions)
 // ---------------------------------------------------------------------------
 
