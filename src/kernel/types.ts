@@ -53,6 +53,7 @@ export interface SigningKey {
 /** A spec-compliant signature block (HIRI Protocol §5.2). */
 export interface HiriSignature {
   type: string; // e.g., "Ed25519Signature2020"
+  canonicalization: string; // "JCS" | "URDNA2015"
   created: string; // ISO 8601
   verificationMethod: string; // HIRI URI to key, e.g., "hiri://key:ed25519:.../key/main#key-1"
   proofPurpose: string; // e.g., "assertionMethod"
@@ -72,9 +73,10 @@ export interface ManifestTiming {
 /** Content reference within a manifest. */
 export interface ManifestContent {
   hash: string; // e.g., "sha256:<hex-digest>"
+  addressing: string; // "raw-sha256" | "cidv1-dag-cbor"
   format: string; // MIME type, e.g., "application/ld+json"
   size: number; // Byte count
-  canonicalization: string; // e.g., "JCS"
+  canonicalization: string; // "JCS" | "URDNA2015"
 }
 
 /** Chain link to previous manifest (absent for genesis). */
@@ -90,7 +92,7 @@ export interface UnsignedManifest {
   "@context": Array<string>;
   "@id": string;
   "@type": string;
-  "hiri:version": number;
+  "hiri:version": string;
   "hiri:branch": string;
   "hiri:timing": ManifestTiming;
   "hiri:content": ManifestContent;
@@ -158,7 +160,7 @@ export interface UnsignedKeyDocument {
   "@context": Array<string>;
   "@id": string;
   "@type": string;
-  "hiri:version": number;
+  "hiri:version": string;
   "hiri:authority": string;
   "hiri:authorityType": string;
   "hiri:activeKeys": VerificationKey[];
@@ -180,10 +182,11 @@ export interface KeyDocument extends UnsignedKeyDocument {
 /** Parameters for building an unsigned manifest. */
 export interface ManifestParams {
   id: string;
-  version: number;
+  version: string;
   branch: string;
   created: string; // ISO 8601 timestamp (per ADR-003: caller provides)
   contentHash: string;
+  addressing: string; // "raw-sha256" | "cidv1-dag-cbor"
   contentFormat: string;
   contentSize: number;
   canonicalization: string;
@@ -196,7 +199,7 @@ export interface ManifestParams {
 export interface KeyDocumentParams {
   authority: string;
   authorityType: string;
-  version: number;
+  version: string;
   activeKeys: VerificationKey[];
   rotatedKeys?: RotatedKey[];
   revokedKeys?: RevokedKey[];
@@ -218,7 +221,7 @@ export interface JsonPatchOperation {
 /** Delta metadata embedded in a manifest. */
 export interface ManifestDelta {
   hash: string; // Hash of the canonicalized delta operations
-  format: string; // e.g., "json-patch"
+  format: string; // "application/json-patch+json" | "application/rdf-patch"
   appliesTo: string; // Hash of the previous content this delta applies to
   operations: number; // Count of patch operations
 }
@@ -250,7 +253,7 @@ export interface ChainWalkResult {
 
 /** A single failure point in a chain walk (Milestone 5). */
 export interface ChainFailure {
-  version: number;
+  version: string;
   keyId: string;
   keyStatus: KeyStatus;
   reason: string;
@@ -341,6 +344,15 @@ export interface KeyVerificationResult {
   keyStatus: KeyStatus;
   keyId: string;
   warning?: string;
+  revocationStatus: "confirmed-valid" | "confirmed-revoked" | "unknown";
+  timestampVerification: "tsa-verified" | "tsa-present-unverified" | "advisory-only" | "absent";
+}
+
+export interface VerificationStatus {
+  signatureValid: boolean;
+  keyStatus: KeyStatus;
+  revocationStatus: "confirmed-valid" | "confirmed-revoked" | "unknown";
+  timestampVerification: "tsa-verified" | "tsa-present-unverified" | "advisory-only" | "absent";
 }
 
 /** A signature within a rotation proof (dual-signature authorization). */

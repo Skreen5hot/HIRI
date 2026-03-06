@@ -19,7 +19,7 @@ import { executeQuery } from "../src/kernel/query-executor.js";
 import { resolve } from "../src/kernel/resolve.js";
 import type { VerifiedContent } from "../src/kernel/resolve.js";
 import { stableStringify } from "../src/kernel/canonicalize.js";
-import { deriveAuthorityAsync } from "../src/kernel/authority.js";
+import { deriveAuthority } from "../src/kernel/authority.js";
 import { buildUnsignedManifest, prepareContent } from "../src/kernel/manifest.js";
 import { signManifest } from "../src/kernel/signing.js";
 import { hashManifest } from "../src/kernel/chain.js";
@@ -61,7 +61,7 @@ const semanticsNone: ManifestSemantics = {
 
 // Generate keypair and derive authority
 const keypair = await generateKeypair("key-1");
-const authority = await deriveAuthorityAsync(keypair.publicKey, "ed25519", crypto);
+const authority = deriveAuthority(keypair.publicKey, "ed25519");
 
 /**
  * Helper: prepare a JSON-LD fixture, build a signed genesis manifest,
@@ -81,16 +81,17 @@ async function prepareFixture(
   const uri = `hiri://${authority}/data/${resourceId}`;
   const unsigned = buildUnsignedManifest({
     id: uri,
-    version: 1,
+    version: "1",
     branch: "main",
     created: "2025-01-15T14:30:00Z",
     contentHash,
     contentFormat: "application/ld+json",
     contentSize: contentBytes.length,
     canonicalization: "JCS",
+    addressing: "raw-sha256",
     ...(opts?.includeSemantics !== false ? { semantics: semanticsNone } : {}),
   });
-  const signed = await signManifest(unsigned, keypair, "2025-01-15T14:30:00Z", crypto);
+  const signed = await signManifest(unsigned, keypair, "2025-01-15T14:30:00Z", "JCS", crypto);
 
   const manifestCanonical = stableStringify(signed, false);
   const manifestBytes = new TextEncoder().encode(manifestCanonical);

@@ -22,7 +22,7 @@
  */
 
 import { HiriURI } from "./hiri-uri.js";
-import { deriveAuthorityAsync } from "./authority.js";
+import { deriveAuthority } from "./authority.js";
 import { verifyManifest } from "./signing.js";
 import { verifyChain, verifyChainWithKeyLifecycle } from "./chain.js";
 import { verifyManifestWithKeyLifecycle } from "./key-lifecycle.js";
@@ -99,12 +99,8 @@ export async function resolve(
     throw new ResolutionError("PARSE_ERROR", `Malformed URI: ${uri}`);
   }
 
-  // Step 2: Verify authority matches public key
-  const derivedAuthority = await deriveAuthorityAsync(
-    publicKey,
-    "ed25519",
-    crypto,
-  );
+  // Step 2: Verify authority matches public key (v3.1.1: sync, no hashing)
+  const derivedAuthority = deriveAuthority(publicKey, "ed25519");
   if (derivedAuthority !== parsed.authority) {
     throw new ResolutionError(
       "AUTHORITY_NOT_FOUND",
@@ -177,7 +173,8 @@ export async function resolve(
     }
   } else {
     // M1–M4 path: bare public key verification
-    const sigValid = await verifyManifest(manifest, publicKey, crypto);
+    const profile = manifest["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
+    const sigValid = await verifyManifest(manifest, publicKey, profile, crypto);
     if (!sigValid) {
       throw new ResolutionError(
         "SIGNATURE_VERIFICATION_FAILED",

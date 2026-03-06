@@ -17,7 +17,7 @@ import { encode as base58Encode, decode as base58Decode } from "../src/kernel/ba
 import { stableStringify } from "../src/kernel/canonicalize.js";
 import { HiriURI } from "../src/kernel/hiri-uri.js";
 import { HashRegistry } from "../src/kernel/hash-registry.js";
-import { deriveAuthority, deriveAuthorityAsync } from "../src/kernel/authority.js";
+import { deriveAuthority, extractPublicKey } from "../src/kernel/authority.js";
 import { buildUnsignedManifest, buildKeyDocument, prepareContent } from "../src/kernel/manifest.js";
 import { signManifest, verifyManifest, signKeyDocument } from "../src/kernel/signing.js";
 import { validateGenesis } from "../src/kernel/genesis.js";
@@ -183,24 +183,17 @@ try {
   ok(testKeypair.publicKey.length === 32, `publicKey should be 32 bytes, got ${testKeypair.publicKey.length}`);
 
   // Derive authority
-  testAuthority = await deriveAuthorityAsync(testKeypair.publicKey, "ed25519", defaultCryptoProvider);
+  testAuthority = deriveAuthority(testKeypair.publicKey, "ed25519");
 
   // Verify format: key:ed25519:<20-base58-chars>
-  const pattern = /^key:ed25519:[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{20}$/;
+  const pattern = /^key:ed25519:z[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$/;
   ok(pattern.test(testAuthority), `Authority should match pattern, got: ${testAuthority}`);
 
-  // Verify authority is derived from raw digest bytes (not hex string)
-  // Manually compute to confirm: hash pubkey → get raw bytes → base58 → truncate
-  const pubKeyHash = await defaultCryptoProvider.hash(testKeypair.publicKey);
-  const hexDigest = pubKeyHash.substring(pubKeyHash.indexOf(":") + 1);
-  const digestBytes = new Uint8Array(hexDigest.length / 2);
-  for (let i = 0; i < digestBytes.length; i++) {
-    digestBytes[i] = parseInt(hexDigest.substring(i * 2, i * 2 + 2), 16);
-  }
-  const manualAuthority = deriveAuthority(digestBytes, "ed25519");
-  strictEqual(testAuthority, manualAuthority, "Async and sync derivation must match");
+  // Verify round-trip: extractPublicKey(deriveAuthority(pk)) === pk
+  const recovered = extractPublicKey(testAuthority);
+  deepStrictEqual(recovered.publicKey, testKeypair.publicKey, "Round-trip must recover original key");
 
-  pass("1.1: Keypair generation and authority derivation matches key:ed25519:<20-chars>");
+  pass("1.1: Keypair generation and authority derivation matches key:ed25519:z<full-key>");
 } catch (e) { fail("1.1: Keypair generation and authority derivation", e); }
 
 // =========================================================================
@@ -227,29 +220,32 @@ try {
 
   const unsigned = buildUnsignedManifest({
     id: manifestId,
-    version: 1,
+    version: "1",
     branch: "main",
     created: timestamp,
     contentHash,
     contentFormat: "application/ld+json",
     contentSize: contentBytes.length,
     canonicalization: "JCS",
+    addressing: "raw-sha256",
   });
 
   // Sign it
-  signedManifest = await signManifest(unsigned, testKeypair!, timestamp, defaultCryptoProvider);
+  signedManifest = await signManifest(unsigned, testKeypair!, timestamp, "JCS", defaultCryptoProvider);
 
   // Assert all required fields
   ok(Array.isArray(signedManifest["@context"]), "@context should be array");
   strictEqual(signedManifest["@id"], manifestId);
   strictEqual(signedManifest["@type"], "hiri:ResolutionManifest");
-  strictEqual(signedManifest["hiri:version"], 1);
+  strictEqual(signedManifest["hiri:version"], "1");
   strictEqual(signedManifest["hiri:branch"], "main");
   ok(signedManifest["hiri:timing"].created, "timing.created should exist");
   ok(signedManifest["hiri:content"].hash.startsWith("sha256:"), "content.hash should have sha256 prefix");
   strictEqual(signedManifest["hiri:content"].format, "application/ld+json");
   ok(signedManifest["hiri:content"].size > 0, "content.size should be positive");
   strictEqual(signedManifest["hiri:content"].canonicalization, "JCS");
+  strictEqual(signedManifest["hiri:content"].addressing, "raw-sha256");
+  strictEqual(signedManifest["hiri:signature"].canonicalization, "JCS");
   strictEqual(signedManifest["hiri:signature"].type, "Ed25519Signature2020");
   ok(signedManifest["hiri:signature"].proofValue.startsWith("z"), "proofValue should have z multibase prefix");
   ok(signedManifest["hiri:signature"].verificationMethod.includes("#key-1"), "verificationMethod should reference key-1");
@@ -263,7 +259,7 @@ try {
 
 try {
   ok(signedManifest, "Signed manifest required from test 1.2");
-  const result = await verifyManifest(signedManifest!, testKeypair!.publicKey, defaultCryptoProvider);
+  const result = await verifyManifest(signedManifest!, testKeypair!.publicKey, "JCS", defaultCryptoProvider);
   strictEqual(result, true);
   pass("1.3: Manifest signature verified against public key");
 } catch (e) { fail("1.3: Verify manifest against public key", e); }
@@ -308,7 +304,7 @@ try {
   tampered["hiri:content"].hash = originalHash.substring(0, originalHash.length - 1) + (lastChar === "0" ? "1" : "0");
 
   // Signature should now be invalid
-  const result = await verifyManifest(tampered, testKeypair!.publicKey, defaultCryptoProvider);
+  const result = await verifyManifest(tampered, testKeypair!.publicKey, "JCS", defaultCryptoProvider);
   strictEqual(result, false);
 
   pass("1.4b: Manifest tampering detected — signature verification fails");
@@ -329,7 +325,7 @@ try {
   const flipped = pv[mid] === "A" ? "B" : "A";
   tampered["hiri:signature"].proofValue = pv.substring(0, mid) + flipped + pv.substring(mid + 1);
 
-  const result = await verifyManifest(tampered, testKeypair!.publicKey, defaultCryptoProvider);
+  const result = await verifyManifest(tampered, testKeypair!.publicKey, "JCS", defaultCryptoProvider);
   strictEqual(result, false);
 
   pass("1.5: Signature tampering detected — verification fails");
@@ -357,10 +353,11 @@ try {
   // Build a manifest with version 2 but no chain
   const unsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 2,
+    version: "2",
     branch: "main",
     created: "2025-02-15T14:30:00Z",
     contentHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: 100,
     canonicalization: "JCS",
@@ -479,15 +476,16 @@ try {
 
   const v1Unsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 1,
+    version: "1",
     branch: "main",
     created: "2025-01-15T14:30:00Z",
     contentHash: v1ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v1ContentBytes.length,
     canonicalization: "JCS",
   });
-  v1Manifest = await signManifest(v1Unsigned, testKeypair!, "2025-01-15T14:30:00Z", defaultCryptoProvider);
+  v1Manifest = await signManifest(v1Unsigned, testKeypair!, "2025-01-15T14:30:00Z", "JCS", defaultCryptoProvider);
   v1ManifestHash = await hashManifest(v1Manifest, defaultCryptoProvider);
 
   // --- V2 with chain + delta ---
@@ -509,10 +507,11 @@ try {
 
   const v2Unsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 2,
+    version: "2",
     branch: "main",
     created: "2025-02-15T14:30:00Z",
     contentHash: v2ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v2ContentBytes.length,
     canonicalization: "JCS",
@@ -524,7 +523,7 @@ try {
     },
     delta,
   });
-  v2Manifest = await signManifest(v2Unsigned, testKeypair!, "2025-02-15T14:30:00Z", defaultCryptoProvider);
+  v2Manifest = await signManifest(v2Unsigned, testKeypair!, "2025-02-15T14:30:00Z", "JCS", defaultCryptoProvider);
   v2ManifestHash = await hashManifest(v2Manifest, defaultCryptoProvider);
 
   // Populate stores
@@ -576,7 +575,7 @@ try {
 try {
   // Create a tampered manifest store where v1 is modified
   const tamperedV1 = structuredClone(v1Manifest);
-  tamperedV1["hiri:version"] = 99; // tamper
+  tamperedV1["hiri:version"] = "99"; // tamper
   const tamperedStore = new Map(manifestStore);
   tamperedStore.set(v1ManifestHash, tamperedV1); // store tampered under original hash
 
@@ -597,6 +596,7 @@ try {
     deltaOps,
     v1ContentBytes,
     v2ContentHash,
+    "JCS",
     defaultCryptoProvider,
   );
   strictEqual(result.valid, true, `Expected valid delta, got: ${result.reason}`);
@@ -621,17 +621,18 @@ try {
   // Build a v2 with corrupted delta
   const corruptedDelta = {
     hash: corruptedHash,
-    format: "json-patch",
+    format: "application/json-patch+json",
     appliesTo: v1ContentHash,
     operations: corruptedDeltaOps.length,
   };
 
   const corruptedV2Unsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 2,
+    version: "2",
     branch: "main",
     created: "2025-02-15T14:30:00Z",
     contentHash: v2ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v2ContentBytes.length,
     canonicalization: "JCS",
@@ -643,7 +644,7 @@ try {
     },
     delta: corruptedDelta,
   });
-  const corruptedV2 = await signManifest(corruptedV2Unsigned, testKeypair!, "2025-02-15T14:30:00Z", defaultCryptoProvider);
+  const corruptedV2 = await signManifest(corruptedV2Unsigned, testKeypair!, "2025-02-15T14:30:00Z", "JCS", defaultCryptoProvider);
   const corruptedV2Hash = await hashManifest(corruptedV2, defaultCryptoProvider);
 
   // Set up stores with corrupted v2
@@ -679,6 +680,7 @@ try {
     deltaOps,
     v1ContentBytes,
     v2ContentHash,
+    "JCS",
     defaultCryptoProvider,
   );
   strictEqual(result.valid, false, "Should detect appliesTo mismatch");
@@ -708,10 +710,11 @@ try {
   // Build v3 manifest (same content as v2 for simplicity, but version 3)
   const v3Unsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 3,
+    version: "3",
     branch: "main",
     created: "2025-03-15T14:30:00Z",
     contentHash: v2ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v2ContentBytes.length,
     canonicalization: "JCS",
@@ -722,7 +725,7 @@ try {
       depth: 3,
     },
   });
-  const v3Manifest = await signManifest(v3Unsigned, testKeypair!, "2025-03-15T14:30:00Z", defaultCryptoProvider);
+  const v3Manifest = await signManifest(v3Unsigned, testKeypair!, "2025-03-15T14:30:00Z", "JCS", defaultCryptoProvider);
 
   // Add to stores
   const threeDeepManifestStore = new Map(manifestStore);
@@ -745,10 +748,11 @@ try {
   // Build a v2 with version=1 (same as v1)
   const badV2Unsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 1,
+    version: "1",
     branch: "main",
     created: "2025-02-15T14:30:00Z",
     contentHash: v2ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v2ContentBytes.length,
     canonicalization: "JCS",
@@ -759,7 +763,7 @@ try {
       depth: 2,
     },
   });
-  const badV2 = await signManifest(badV2Unsigned, testKeypair!, "2025-02-15T14:30:00Z", defaultCryptoProvider);
+  const badV2 = await signManifest(badV2Unsigned, testKeypair!, "2025-02-15T14:30:00Z", "JCS", defaultCryptoProvider);
 
   const result = await validateChainLink(badV2, v1Manifest, defaultCryptoProvider);
   strictEqual(result.valid, false, "Should reject non-monotonic version");
@@ -775,10 +779,11 @@ try {
 try {
   const badDepthUnsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 2,
+    version: "2",
     branch: "main",
     created: "2025-02-15T14:30:00Z",
     contentHash: v2ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v2ContentBytes.length,
     canonicalization: "JCS",
@@ -789,7 +794,7 @@ try {
       depth: 5, // Wrong: should be 2
     },
   });
-  const badDepthV2 = await signManifest(badDepthUnsigned, testKeypair!, "2025-02-15T14:30:00Z", defaultCryptoProvider);
+  const badDepthV2 = await signManifest(badDepthUnsigned, testKeypair!, "2025-02-15T14:30:00Z", "JCS", defaultCryptoProvider);
 
   const result = await validateChainLink(badDepthV2, v1Manifest, defaultCryptoProvider);
   strictEqual(result.valid, false, "Should reject wrong depth");
@@ -805,10 +810,11 @@ try {
 try {
   const badGenesisUnsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 2,
+    version: "2",
     branch: "main",
     created: "2025-02-15T14:30:00Z",
     contentHash: v2ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v2ContentBytes.length,
     canonicalization: "JCS",
@@ -819,7 +825,7 @@ try {
       depth: 2,
     },
   });
-  const badGenesisV2 = await signManifest(badGenesisUnsigned, testKeypair!, "2025-02-15T14:30:00Z", defaultCryptoProvider);
+  const badGenesisV2 = await signManifest(badGenesisUnsigned, testKeypair!, "2025-02-15T14:30:00Z", "JCS", defaultCryptoProvider);
 
   const result = await validateChainLink(badGenesisV2, v1Manifest, defaultCryptoProvider);
   strictEqual(result.valid, false, "Should reject wrong genesis hash");
@@ -835,10 +841,11 @@ try {
 try {
   const badBranchUnsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 2,
+    version: "2",
     branch: "main",
     created: "2025-02-15T14:30:00Z",
     contentHash: v2ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v2ContentBytes.length,
     canonicalization: "JCS",
@@ -849,7 +856,7 @@ try {
       depth: 2,
     },
   });
-  const badBranchV2 = await signManifest(badBranchUnsigned, testKeypair!, "2025-02-15T14:30:00Z", defaultCryptoProvider);
+  const badBranchV2 = await signManifest(badBranchUnsigned, testKeypair!, "2025-02-15T14:30:00Z", "JCS", defaultCryptoProvider);
 
   const result = await validateChainLink(badBranchV2, v1Manifest, defaultCryptoProvider);
   strictEqual(result.valid, false, "Should reject branch mismatch");
@@ -866,10 +873,11 @@ try {
   // Build a v2 with the wrong chain.previous (pointing to some random hash)
   const tamperedPreviousUnsigned = buildUnsignedManifest({
     id: `hiri://${testAuthority!}/data/person-001`,
-    version: 2,
+    version: "2",
     branch: "main",
     created: "2025-02-15T14:30:00Z",
     contentHash: v2ContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: v2ContentBytes.length,
     canonicalization: "JCS",
@@ -881,7 +889,7 @@ try {
     },
   });
   // Re-sign with valid key — the signature is valid but chain.previous is wrong
-  const tamperedPreviousV2 = await signManifest(tamperedPreviousUnsigned, testKeypair!, "2025-02-15T14:30:00Z", defaultCryptoProvider);
+  const tamperedPreviousV2 = await signManifest(tamperedPreviousUnsigned, testKeypair!, "2025-02-15T14:30:00Z", "JCS", defaultCryptoProvider);
 
   const result = await validateChainLink(tamperedPreviousV2, v1Manifest, defaultCryptoProvider);
   strictEqual(result.valid, false, "Should reject tampered chain.previous");

@@ -1,16 +1,12 @@
 /**
- * Delta Construction and Verification
+ * Delta Construction and Verification (v3.1.1)
  *
  * Provides functions for building delta metadata (for manifest embedding)
  * and verifying deltas against previous and current content.
  *
- * verifyDelta accepts Uint8Array for previous content, owning the full
- * pipeline: hash verify → decode → parse → apply patch → canonicalize →
- * encode → hash → compare. This prevents hash-verification-on-different-bytes bugs.
- *
- * Error handling contract:
- * - applyPatch (in json-patch.ts) throws on programming errors
- * - verifyDelta catches throws and returns { valid: false, reason }
+ * v3.1.1 changes:
+ * - Format uses MIME types: "application/json-patch+json" | "application/rdf-patch"
+ * - Delta-canonicalization coupling validation added
  *
  * This module is part of the kernel and MUST NOT perform I/O or
  * reference non-deterministic APIs.
@@ -31,11 +27,6 @@ import type {
  * Serializes the operations array via JCS (canonical form for hashing),
  * hashes the result, and returns the ManifestDelta structure plus the
  * serialized string.
- *
- * @param operations - The JSON Patch operations
- * @param appliesTo - Hash of the previous content this delta applies to
- * @param crypto - Injected crypto provider
- * @returns Delta metadata and serialized operations string
  */
 export async function buildDelta(
   operations: JsonPatchOperation[],
@@ -49,7 +40,7 @@ export async function buildDelta(
   return {
     delta: {
       hash,
-      format: "json-patch",
+      format: "application/json-patch+json",
       appliesTo,
       operations: operations.length,
     },
@@ -58,31 +49,51 @@ export async function buildDelta(
 }
 
 /**
+ * Validate delta-canonicalization coupling.
+ *
+ * JCS profile requires JSON Patch format.
+ * URDNA2015 profile requires RDF Patch format.
+ */
+export function validateDeltaCoupling(
+  profile: "JCS" | "URDNA2015",
+  delta: ManifestDelta,
+): ChainValidation {
+  if (profile === "JCS" && delta.format !== "application/json-patch+json") {
+    return { valid: false, reason: "JCS profile requires JSON Patch format (application/json-patch+json)" };
+  }
+  if (profile === "URDNA2015" && delta.format !== "application/rdf-patch") {
+    return { valid: false, reason: "URDNA2015 profile requires RDF Patch format (application/rdf-patch)" };
+  }
+  return { valid: true };
+}
+
+/**
  * Verify a delta against previous and current content.
  *
  * Full pipeline (accepts Uint8Array for previous content):
- * 1. Verify delta.appliesTo matches hash of previousContentBytes
- * 2. Verify delta.hash matches hash of serialized deltaContent
- * 3. Decode previousContentBytes → parse JSON
- * 4. Apply patch operations
- * 5. Canonicalize result → encode → hash
- * 6. Compare to currentContentHash
- *
- * @param delta - The delta metadata from the manifest
- * @param deltaContent - The actual patch operations
- * @param previousContentBytes - Raw bytes of the previous content
- * @param currentContentHash - Expected hash of the current content
- * @param crypto - Injected crypto provider
- * @returns Validation result
+ * 1. Validate delta-canonicalization coupling
+ * 2. Verify delta.appliesTo matches hash of previousContentBytes
+ * 3. Verify delta.hash matches hash of serialized deltaContent
+ * 4. Decode previousContentBytes -> parse JSON
+ * 5. Apply patch operations
+ * 6. Canonicalize result -> encode -> hash
+ * 7. Compare to currentContentHash
  */
 export async function verifyDelta(
   delta: ManifestDelta,
   deltaContent: JsonPatchOperation[],
   previousContentBytes: Uint8Array,
   currentContentHash: string,
+  profile: "JCS" | "URDNA2015",
   crypto: CryptoProvider,
 ): Promise<ChainValidation> {
-  // Step 1: Verify delta.appliesTo matches previous content hash
+  // Step 1: Validate delta-canonicalization coupling
+  const couplingResult = validateDeltaCoupling(profile, delta);
+  if (!couplingResult.valid) {
+    return couplingResult;
+  }
+
+  // Step 2: Verify delta.appliesTo matches previous content hash
   const previousHash = await crypto.hash(previousContentBytes);
   if (previousHash !== delta.appliesTo) {
     return {
@@ -91,7 +102,7 @@ export async function verifyDelta(
     };
   }
 
-  // Step 2: Verify delta hash matches serialized operations
+  // Step 3: Verify delta hash matches serialized operations
   const serialized = stableStringify(deltaContent, false);
   const serializedBytes = new TextEncoder().encode(serialized);
   const deltaHash = await crypto.hash(serializedBytes);
@@ -102,7 +113,7 @@ export async function verifyDelta(
     };
   }
 
-  // Step 3: Decode previous content
+  // Step 4: Decode previous content
   let previousDoc: unknown;
   try {
     const previousStr = new TextDecoder().decode(previousContentBytes);
@@ -114,7 +125,7 @@ export async function verifyDelta(
     };
   }
 
-  // Step 4: Apply patch (catches throws from applyPatch)
+  // Step 5: Apply patch (catches throws from applyPatch)
   let patchedDoc: unknown;
   try {
     patchedDoc = applyPatch(previousDoc, deltaContent);
@@ -125,12 +136,12 @@ export async function verifyDelta(
     };
   }
 
-  // Step 5: Canonicalize, encode, and hash
+  // Step 6: Canonicalize, encode, and hash
   const patchedStr = stableStringify(patchedDoc, false);
   const patchedBytes = new TextEncoder().encode(patchedStr);
   const patchedHash = await crypto.hash(patchedBytes);
 
-  // Step 6: Compare to current content hash
+  // Step 7: Compare to current content hash
   if (patchedHash !== currentContentHash) {
     return {
       valid: false,

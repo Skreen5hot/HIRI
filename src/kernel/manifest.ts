@@ -19,7 +19,7 @@ import type {
   UnsignedKeyDocument,
 } from "./types.js";
 
-const HIRI_CONTEXT = "https://hiri-protocol.org/spec/v2.1";
+const HIRI_CONTEXT = "https://hiri-protocol.org/spec/v3.1";
 const SECURITY_CONTEXT = "https://w3id.org/security/v2";
 
 /**
@@ -38,6 +38,7 @@ export function buildUnsignedManifest(params: ManifestParams): UnsignedManifest 
     },
     "hiri:content": {
       hash: params.contentHash,
+      addressing: params.addressing,
       format: params.contentFormat,
       size: params.contentSize,
       canonicalization: params.canonicalization,

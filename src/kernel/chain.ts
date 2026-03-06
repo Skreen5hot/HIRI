@@ -14,6 +14,7 @@
  */
 
 import { stableStringify } from "./canonicalize.js";
+import { parseVersion } from "./version.js";
 import { verifyManifest } from "./signing.js";
 import { verifyDelta } from "./delta.js";
 import { verifyManifestWithKeyLifecycle } from "./key-lifecycle.js";
@@ -79,7 +80,7 @@ export async function validateChainLink(
   }
 
   // Rule 2: Version monotonicity
-  if (current["hiri:version"] <= previous["hiri:version"]) {
+  if (parseVersion(current["hiri:version"]) <= parseVersion(previous["hiri:version"])) {
     return {
       valid: false,
       reason: `Version not monotonically increasing: current=${current["hiri:version"]}, previous=${previous["hiri:version"]}`,
@@ -170,7 +171,8 @@ export async function verifyChain(
     depth++;
 
     // Verify signature of current manifest
-    const sigValid = await verifyManifest(current, publicKey, crypto);
+    const profile = current["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
+    const sigValid = await verifyManifest(current, publicKey, profile, crypto);
     if (!sigValid) {
       return {
         valid: false,
@@ -234,11 +236,13 @@ export async function verifyChain(
             new TextDecoder().decode(deltaOpsBytes),
           ) as JsonPatchOperation[];
 
+          const profile2 = current["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
           const deltaResult = await verifyDelta(
             delta,
             deltaOps,
             prevContentBytes,
             current["hiri:content"].hash,
+            profile2,
             crypto,
           );
 
