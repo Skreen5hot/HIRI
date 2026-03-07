@@ -15,6 +15,7 @@
 import { stableStringify } from "./canonicalize.js";
 import { applyPatch } from "./json-patch.js";
 import { parseNQuads, serializeNQuads, applyRDFPatch } from "./rdf-patch.js";
+import type { HashRegistry } from "./hash-registry.js";
 import type {
   CryptoProvider,
   JsonPatchOperation,
@@ -116,6 +117,7 @@ export async function verifyDelta(
   crypto: CryptoProvider,
   canonicalizer?: Canonicalizer,
   documentLoader?: DocumentLoader,
+  hashRegistry?: HashRegistry,
 ): Promise<ChainValidation> {
   // Step 1: Validate delta-canonicalization coupling
   const couplingResult = validateDeltaCoupling(profile, delta);
@@ -128,11 +130,13 @@ export async function verifyDelta(
   // Check is deferred to format-specific branches because URDNA2015
   // must canonicalize before hashing (raw JSON-LD != canonical N-Quads).
   if (delta.format === "application/json-patch+json") {
-    const previousHash = await crypto.hash(previousContentBytes);
-    if (previousHash !== delta.appliesTo) {
+    const appliesToMatch = hashRegistry
+      ? await hashRegistry.verify(previousContentBytes, delta.appliesTo)
+      : (await crypto.hash(previousContentBytes)) === delta.appliesTo;
+    if (!appliesToMatch) {
       return {
         valid: false,
-        reason: `delta.appliesTo does not match previous content hash: expected="${previousHash}", got="${delta.appliesTo}"`,
+        reason: `delta.appliesTo does not match previous content hash (expected="${delta.appliesTo}")`,
       };
     }
   }
@@ -175,12 +179,14 @@ export async function verifyDelta(
 
     const patchedStr = stableStringify(patchedDoc, false);
     const patchedBytes = new TextEncoder().encode(patchedStr);
-    const patchedHash = await crypto.hash(patchedBytes);
+    const patchedMatch = hashRegistry
+      ? await hashRegistry.verify(patchedBytes, currentContentHash)
+      : (await crypto.hash(patchedBytes)) === currentContentHash;
 
-    if (patchedHash !== currentContentHash) {
+    if (!patchedMatch) {
       return {
         valid: false,
-        reason: `Delta application produces different content hash: expected="${currentContentHash}", got="${patchedHash}"`,
+        reason: `Delta application produces different content hash (expected="${currentContentHash}")`,
       };
     }
 
@@ -226,11 +232,13 @@ export async function verifyDelta(
     }
 
     // Verify delta.appliesTo matches hash of canonical N-Quads
-    const prevCanonicalHash = await crypto.hash(nquadsBytes);
-    if (prevCanonicalHash !== delta.appliesTo) {
+    const appliesToMatch2 = hashRegistry
+      ? await hashRegistry.verify(nquadsBytes, delta.appliesTo)
+      : (await crypto.hash(nquadsBytes)) === delta.appliesTo;
+    if (!appliesToMatch2) {
       return {
         valid: false,
-        reason: `delta.appliesTo does not match previous content hash: expected="${prevCanonicalHash}", got="${delta.appliesTo}"`,
+        reason: `delta.appliesTo does not match previous content hash (expected="${delta.appliesTo}")`,
       };
     }
 
@@ -253,11 +261,13 @@ export async function verifyDelta(
     }
 
     // Hash and compare
-    const patchedHash = await crypto.hash(canonicalBytes);
-    if (patchedHash !== currentContentHash) {
+    const patchedMatch2 = hashRegistry
+      ? await hashRegistry.verify(canonicalBytes, currentContentHash)
+      : (await crypto.hash(canonicalBytes)) === currentContentHash;
+    if (!patchedMatch2) {
       return {
         valid: false,
-        reason: `Delta application produces different content hash: expected="${currentContentHash}", got="${patchedHash}"`,
+        reason: `Delta application produces different content hash (expected="${currentContentHash}")`,
       };
     }
 

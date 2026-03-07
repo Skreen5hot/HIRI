@@ -26,6 +26,7 @@ import { deriveAuthority } from "./authority.js";
 import { verifyManifest } from "./signing.js";
 import { verifyChain, verifyChainWithKeyLifecycle } from "./chain.js";
 import { verifyManifestWithKeyLifecycle } from "./key-lifecycle.js";
+import type { HashRegistry } from "./hash-registry.js";
 import type {
   Canonicalizer,
   DocumentLoader,
@@ -50,6 +51,7 @@ export interface ResolveOptions {
   verificationTime?: string;     // Injected mock clock for grace period checks (M5)
   canonicalizer?: Canonicalizer; // Injected canonicalizer for URDNA2015 (M7)
   documentLoader?: DocumentLoader; // Injected document loader for URDNA2015 (M7)
+  hashRegistry?: HashRegistry;      // Injected hash registry for CIDv1 content verification
 }
 
 export interface VerifiedContent {
@@ -203,6 +205,7 @@ export async function resolve(
         crypto,
         options.canonicalizer,
         options.documentLoader,
+        options.hashRegistry,
       );
 
       if (chainResult.warnings.length > 0) {
@@ -225,6 +228,7 @@ export async function resolve(
         crypto,
         options.canonicalizer,
         options.documentLoader,
+        options.hashRegistry,
       );
 
       if (!chainResult.valid) {
@@ -246,13 +250,23 @@ export async function resolve(
     );
   }
 
-  // Step 10: Verify content hash
-  const computedContentHash = await crypto.hash(contentBytes);
-  if (computedContentHash !== contentHash) {
-    throw new ResolutionError(
-      "STORAGE_CORRUPTION",
-      `Content hash mismatch: expected "${contentHash}", computed "${computedContentHash}"`,
-    );
+  // Step 10: Verify content hash (hashRegistry-aware for CIDv1)
+  if (options.hashRegistry) {
+    const contentValid = await options.hashRegistry.verify(contentBytes, contentHash);
+    if (!contentValid) {
+      throw new ResolutionError(
+        "STORAGE_CORRUPTION",
+        `Content hash verification failed for "${contentHash}"`,
+      );
+    }
+  } else {
+    const computedContentHash = await crypto.hash(contentBytes);
+    if (computedContentHash !== contentHash) {
+      throw new ResolutionError(
+        "STORAGE_CORRUPTION",
+        `Content hash mismatch: expected "${contentHash}", computed "${computedContentHash}"`,
+      );
+    }
   }
 
   return {

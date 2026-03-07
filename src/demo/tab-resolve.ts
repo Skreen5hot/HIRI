@@ -15,8 +15,14 @@ import { DelayedAdapter } from "../adapters/persistence/delayed.js";
 import { HiriURI } from "../kernel/hiri-uri.js";
 import { stableStringify } from "../kernel/canonicalize.js";
 import { defaultCryptoProvider } from "../adapters/crypto/provider.js";
+import { HashRegistry } from "../kernel/hash-registry.js";
+import { URDNA2015Canonicalizer } from "../adapters/canonicalization/urdna2015-canonicalizer.js";
+import { CIDv1Algorithm } from "../adapters/content-addressing/cidv1-algorithm.js";
+import { SHA256Algorithm } from "../adapters/crypto/sha256.js";
+import { createCatalogDocumentLoader } from "../adapters/canonicalization/secure-document-loader.js";
 import { demoState } from "./state.js";
 import type { StorageAdapter } from "../kernel/types.js";
+import type { ResolveOptions } from "../kernel/resolve.js";
 
 const crypto = defaultCryptoProvider;
 
@@ -137,6 +143,51 @@ function getSelectedAdapterName(): string {
   }
 }
 
+// Minimal schema.org context for URDNA2015 document loader (no network fetch)
+const SCHEMA_ORG_CONTEXT = {
+  "@context": {
+    "schema": "http://schema.org/",
+    "schema:Person": { "@id": "http://schema.org/Person" },
+    "schema:name": { "@id": "http://schema.org/name" },
+    "schema:jobTitle": { "@id": "http://schema.org/jobTitle" },
+    "schema:affiliation": { "@id": "http://schema.org/affiliation" },
+    "schema:email": { "@id": "http://schema.org/email" },
+    "schema:address": { "@id": "http://schema.org/address" },
+    "schema:PostalAddress": { "@id": "http://schema.org/PostalAddress" },
+    "schema:addressLocality": { "@id": "http://schema.org/addressLocality" },
+    "schema:addressRegion": { "@id": "http://schema.org/addressRegion" },
+  },
+};
+
+function buildResolveOptions(): Partial<ResolveOptions> {
+  const manifest = demoState.latestManifest?.manifest;
+  if (!manifest) return {};
+
+  const profile = manifest["hiri:signature"]?.canonicalization;
+  const addressing = manifest["hiri:content"]?.addressing;
+  const extras: Partial<ResolveOptions> = {};
+
+  // Inject canonicalizer + documentLoader for URDNA2015
+  if (profile === "URDNA2015") {
+    extras.canonicalizer = new URDNA2015Canonicalizer();
+    extras.documentLoader = createCatalogDocumentLoader({
+      "http://schema.org/": SCHEMA_ORG_CONTEXT,
+    });
+  }
+
+  // Inject hashRegistry for CIDv1 (or any non-sha256 addressing)
+  if (addressing === "cidv1-dag-cbor" || (profile === "URDNA2015")) {
+    const registry = new HashRegistry();
+    registry.register(new SHA256Algorithm());
+    if (addressing === "cidv1-dag-cbor") {
+      registry.register(new CIDv1Algorithm(profile ?? "JCS"));
+    }
+    extras.hashRegistry = registry;
+  }
+
+  return extras;
+}
+
 async function handleResolve(): Promise<void> {
   const uri = (document.getElementById("resolve-uri") as HTMLInputElement).value.trim();
   if (!uri) return;
@@ -182,6 +233,7 @@ async function handleResolve(): Promise<void> {
         keyDocument: demoState.keyDocument,
         verificationTime: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
       } : {}),
+      ...buildResolveOptions(),
     });
 
     const elapsed = (performance.now() - startTime).toFixed(1);
@@ -265,6 +317,7 @@ async function handleProveIdentical(): Promise<void> {
         keyDocument: demoState.keyDocument,
         verificationTime: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
       } : {}),
+      ...buildResolveOptions(),
     };
 
     const adapters: Array<{ name: string; adapter: StorageAdapter }> = [

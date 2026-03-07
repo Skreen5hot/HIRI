@@ -19,6 +19,7 @@ import { parseVersion } from "./version.js";
 import { verifyManifest } from "./signing.js";
 import { verifyDelta } from "./delta.js";
 import { verifyManifestWithKeyLifecycle } from "./key-lifecycle.js";
+import type { HashRegistry } from "./hash-registry.js";
 import type {
   Canonicalizer,
   DocumentLoader,
@@ -171,6 +172,7 @@ export async function verifyChain(
   crypto: CryptoProvider,
   canonicalizer?: Canonicalizer,
   documentLoader?: DocumentLoader,
+  hashRegistry?: HashRegistry,
 ): Promise<ChainWalkResult> {
   const warnings: string[] = [];
   let current = head;
@@ -256,14 +258,17 @@ export async function verifyChain(
             crypto,
             canonicalizer,
             documentLoader,
+            hashRegistry,
           );
 
           if (!deltaResult.valid) {
             // Delta failed — fall back to full content verification
             const contentBytes = await fetchContent(current["hiri:content"].hash);
             if (contentBytes) {
-              const contentHash = await crypto.hash(contentBytes);
-              if (contentHash !== current["hiri:content"].hash) {
+              const fallbackMatch = hashRegistry
+                ? await hashRegistry.verify(contentBytes, current["hiri:content"].hash)
+                : (await crypto.hash(contentBytes)) === current["hiri:content"].hash;
+              if (!fallbackMatch) {
                 return {
                   valid: false,
                   depth,
@@ -312,6 +317,7 @@ export async function verifyChainWithKeyLifecycle(
   crypto: CryptoProvider,
   canonicalizer?: Canonicalizer,
   documentLoader?: DocumentLoader,
+  hashRegistry?: HashRegistry,
 ): Promise<ChainWalkResult> {
   const warnings: string[] = [];
   const failures: ChainFailure[] = [];
@@ -413,14 +419,17 @@ export async function verifyChainWithKeyLifecycle(
             crypto,
             canonicalizer,
             documentLoader,
+            hashRegistry,
           );
 
           if (!deltaResult.valid) {
             // Delta failed — fall back to full content verification
             const contentBytes = await fetchContent(current["hiri:content"].hash);
             if (contentBytes) {
-              const contentHash = await crypto.hash(contentBytes);
-              if (contentHash !== current["hiri:content"].hash) {
+              const fallbackMatch = hashRegistry
+                ? await hashRegistry.verify(contentBytes, current["hiri:content"].hash)
+                : (await crypto.hash(contentBytes)) === current["hiri:content"].hash;
+              if (!fallbackMatch) {
                 return {
                   valid: false,
                   depth,
