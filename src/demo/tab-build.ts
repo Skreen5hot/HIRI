@@ -75,7 +75,7 @@ function render(): void {
       </div>
       <div>
         <div class="panel">
-          <div class="panel-header">JSON-LD Preview</div>
+          <div class="panel-header">JSON-LD Preview <span style="font-size:0.7rem;font-weight:400;color:var(--yellow);margin-left:0.5rem;padding:0.1rem 0.4rem;border:1px solid rgba(210,153,34,0.3);border-radius:3px">Draft (unsigned)</span></div>
           <div class="panel-body">
             <pre id="jsonld-preview"></pre>
           </div>
@@ -446,7 +446,7 @@ function renderManifest(manifest: ResolutionManifest, hash: string): void {
   const panel = document.getElementById("manifest-panel")!;
   panel.innerHTML = `
     <div class="panel" style="margin-top:1rem">
-      <div class="panel-header">Signed Manifest (V${manifest["hiri:version"]})</div>
+      <div class="panel-header">Signed Manifest (V${manifest["hiri:version"]}) <span style="font-size:0.7rem;font-weight:400;color:var(--green);margin-left:0.5rem;padding:0.1rem 0.4rem;border:1px solid rgba(63,185,80,0.3);border-radius:3px">Committed</span></div>
       <div class="panel-body">
         <div style="margin-bottom:0.5rem">
           <span style="color:var(--text-muted);font-size:0.75rem">Manifest Hash:</span>

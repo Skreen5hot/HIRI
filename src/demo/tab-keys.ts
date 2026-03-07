@@ -165,6 +165,9 @@ function renderClock(): void {
           Drag the slider to change the <strong>verification time</strong>.
           The key status is re-evaluated at each position.
         </p>
+        <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--accent);margin-bottom:0.25rem">
+          ${markers.map(m => `<span><code>${m.time.replace("T00:00:00Z", "")}</code></span>`).join("")}
+        </div>
         <div class="slider-container">
           <input type="range" id="clock-slider" min="0" max="1000" value="0" style="width:100%">
           <div class="slider-labels">

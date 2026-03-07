@@ -202,8 +202,14 @@ async function handleResolve(): Promise<void> {
           ? `<br><span style="color:var(--yellow)">Warnings: ${result.warnings.join("; ")}</span>`
           : ""}
       </div>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:0.8rem;margin-bottom:1rem;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
+        <span>Signature: <span style="color:var(--green)">✓ valid</span></span>
+        <span>Key: <span style="color:${result.keyVerification ? (result.keyVerification.keyStatus === "active" ? "var(--green)" : "var(--yellow)") : "var(--text-muted)"}">${result.keyVerification?.keyStatus ?? "direct"}</span></span>
+        <span>Revocation: <span style="color:var(--text-muted)">${result.keyVerification?.revocationStatus ?? "not-checked"}</span></span>
+        <span>Timestamp: <span style="color:var(--text-muted)">${result.keyVerification?.timestampVerification ?? "advisory-only"}</span></span>
+      </div>
       <div class="panel">
-        <div class="panel-header">Verified Content</div>
+        <div class="panel-header">Verified Content (V${result.manifest["hiri:version"]})</div>
         <div class="panel-body">
           <pre>${stableStringify(JSON.parse(contentStr), true)}</pre>
         </div>

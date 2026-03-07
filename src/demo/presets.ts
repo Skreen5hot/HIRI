@@ -21,6 +21,11 @@ import { encode as base58Encode } from "../kernel/base58.js";
 import { addDuration } from "../kernel/temporal.js";
 import { defaultCryptoProvider } from "../adapters/crypto/provider.js";
 import { demoState, type ManifestEntry } from "./state.js";
+import { URDNA2015Canonicalizer } from "../adapters/canonicalization/urdna2015-canonicalizer.js";
+import { CIDv1Algorithm } from "../adapters/content-addressing/cidv1-algorithm.js";
+import { createCatalogDocumentLoader } from "../adapters/canonicalization/secure-document-loader.js";
+import { buildRDFDelta } from "../kernel/delta.js";
+import { parseNQuads } from "../kernel/rdf-patch.js";
 import type {
   ResolutionManifest,
   KeyDocument,
@@ -29,6 +34,7 @@ import type {
   RotationClaim,
   ManifestChain,
   JsonPatchOperation,
+  RDFPatchOperation,
 } from "../kernel/types.js";
 
 const crypto = defaultCryptoProvider;
@@ -335,6 +341,168 @@ async function loadKeyRotation(): Promise<void> {
   await signAndStore(v2Unsigned, keyC, "2025-08-01T00:00:00Z", v2.bytes, v2.hash, "2");
 }
 
+
+// -- Preset: Level 2 (URDNA2015 + CIDv1 + RDF Patch) --------------------
+
+// Minimal schema.org context for the document loader (no network fetch)
+const SCHEMA_ORG_CONTEXT = {
+  "@context": {
+    "schema": "http://schema.org/",
+    "schema:Person": { "@id": "http://schema.org/Person" },
+    "schema:name": { "@id": "http://schema.org/name" },
+    "schema:jobTitle": { "@id": "http://schema.org/jobTitle" },
+    "schema:affiliation": { "@id": "http://schema.org/affiliation" },
+    "schema:email": { "@id": "http://schema.org/email" },
+    "schema:address": { "@id": "http://schema.org/address" },
+    "schema:PostalAddress": { "@id": "http://schema.org/PostalAddress" },
+    "schema:addressLocality": { "@id": "http://schema.org/addressLocality" },
+    "schema:addressRegion": { "@id": "http://schema.org/addressRegion" },
+  },
+};
+
+function researcherV1(authority: string): Record<string, unknown> {
+  return {
+    "@context": { "schema": "http://schema.org/" },
+    "@id": `hiri://${authority}/data/researcher`,
+    "@type": "schema:Person",
+    "schema:name": "Dr. Ada Chen",
+    "schema:jobTitle": "Cryptography Researcher",
+    "schema:affiliation": "Signal Foundation",
+  };
+}
+
+function researcherV2(authority: string): Record<string, unknown> {
+  return {
+    "@context": { "schema": "http://schema.org/" },
+    "@id": `hiri://${authority}/data/researcher`,
+    "@type": "schema:Person",
+    "schema:name": "Dr. Ada Chen",
+    "schema:jobTitle": "Principal Cryptographer",
+    "schema:affiliation": "IETF Working Group",
+    "schema:email": "ada@example.org",
+  };
+}
+
+async function loadLevel2Demo(): Promise<void> {
+  demoState.clear();
+
+  const key1 = await generateKeypair("key-1");
+  const authority = deriveAuthority(key1.publicKey, key1.algorithm);
+  demoState.keypairs.push({ keypair: key1, keyId: key1.keyId, authority });
+  demoState.authority = authority;
+  demoState.initialized = true;
+
+  const resourceUri = `hiri://${authority}/data/researcher`;
+  const canonicalizer = new URDNA2015Canonicalizer();
+  const cidAlgorithm = new CIDv1Algorithm("URDNA2015");
+  const documentLoader = createCatalogDocumentLoader({
+    "http://schema.org/": SCHEMA_ORG_CONTEXT,
+  });
+
+  // -- V1 (genesis, URDNA2015 + CIDv1) --
+  const v1Content = researcherV1(authority);
+  const v1Bytes = await canonicalizer.canonicalize(
+    v1Content as Record<string, unknown>, documentLoader,
+  );
+  const v1Hash = await cidAlgorithm.hash(v1Bytes);
+
+  const v1Unsigned = buildUnsignedManifest({
+    id: resourceUri, version: "1", branch: "main",
+    created: "2025-01-15T00:00:00Z",
+    contentHash: v1Hash, contentFormat: "application/ld+json",
+    contentSize: v1Bytes.length, addressing: "cidv1-dag-cbor",
+    canonicalization: "URDNA2015",
+  });
+
+  const v1Signed = await signManifest(
+    v1Unsigned, key1, "2025-01-15T00:00:00Z", "URDNA2015", crypto,
+    canonicalizer, documentLoader,
+  );
+  const v1ManifestHash = await hashManifest(v1Signed, crypto);
+
+  await demoState.storage.put(v1ManifestHash, new TextEncoder().encode(stableStringify(v1Signed)));
+  await demoState.storage.put(v1Hash, v1Bytes);
+
+  const v1Entry: ManifestEntry = {
+    manifest: v1Signed, manifestHash: v1ManifestHash,
+    contentBytes: v1Bytes, contentHash: v1Hash, version: "1",
+  };
+  demoState.manifests.push(v1Entry);
+
+  // -- V2 (chained, URDNA2015 + CIDv1 + RDF Patch delta) --
+  const v2Content = researcherV2(authority);
+  const v2Bytes = await canonicalizer.canonicalize(
+    v2Content as Record<string, unknown>, documentLoader,
+  );
+  const v2Hash = await cidAlgorithm.hash(v2Bytes);
+
+  // Compute RDF Patch by diffing N-Quads
+  const v1Nquads = new TextDecoder().decode(v1Bytes);
+  const v2Nquads = new TextDecoder().decode(v2Bytes);
+  const v1Quads = parseNQuads(v1Nquads);
+  const v2Quads = parseNQuads(v2Nquads);
+
+  const rdfOps: RDFPatchOperation[] = [];
+  for (const quad of v1Quads) {
+    if (!v2Quads.has(quad)) {
+      const parts = parseQuadLine(quad);
+      if (parts) rdfOps.push({ op: "remove", ...parts });
+    }
+  }
+  for (const quad of v2Quads) {
+    if (!v1Quads.has(quad)) {
+      const parts = parseQuadLine(quad);
+      if (parts) rdfOps.push({ op: "add", ...parts });
+    }
+  }
+
+  const { delta: rdfDelta, serialized: rdfSerialized } = await buildRDFDelta(rdfOps, v1Hash, crypto);
+  const rdfDeltaBytes = new TextEncoder().encode(rdfSerialized);
+  await demoState.storage.put(rdfDelta.hash, rdfDeltaBytes);
+
+  const v2Unsigned = buildUnsignedManifest({
+    id: resourceUri, version: "2", branch: "main",
+    created: "2025-06-01T00:00:00Z",
+    contentHash: v2Hash, contentFormat: "application/ld+json",
+    contentSize: v2Bytes.length, addressing: "cidv1-dag-cbor",
+    canonicalization: "URDNA2015",
+    chain: {
+      previous: v1ManifestHash, previousBranch: "main",
+      genesisHash: v1ManifestHash, depth: 2,
+    },
+    delta: rdfDelta,
+  });
+
+  const v2Signed = await signManifest(
+    v2Unsigned, key1, "2025-06-01T00:00:00Z", "URDNA2015", crypto,
+    canonicalizer, documentLoader,
+  );
+  const v2ManifestHash = await hashManifest(v2Signed, crypto);
+
+  await demoState.storage.put(v2ManifestHash, new TextEncoder().encode(stableStringify(v2Signed)));
+  await demoState.storage.put(v2Hash, v2Bytes);
+
+  demoState.manifests.push({
+    manifest: v2Signed, manifestHash: v2ManifestHash,
+    contentBytes: v2Bytes, contentHash: v2Hash, version: "2",
+  });
+}
+
+/** Parse an N-Quads line into subject, predicate, object components. */
+function parseQuadLine(line: string): { subject: string; predicate: string; object: string } | null {
+  const trimmed = line.trim().replace(/\s*\.\s*$/, "");
+  if (!trimmed) return null;
+  const firstSpace = trimmed.indexOf(" ");
+  if (firstSpace < 0) return null;
+  const secondSpace = trimmed.indexOf(" ", firstSpace + 1);
+  if (secondSpace < 0) return null;
+  return {
+    subject: trimmed.substring(0, firstSpace),
+    predicate: trimmed.substring(firstSpace + 1, secondSpace),
+    object: trimmed.substring(secondSpace + 1),
+  };
+}
+
 // ── Public API ─────────────────────────────────────────────────────────
 
 export async function loadPreset(name: string): Promise<void> {
@@ -347,6 +515,9 @@ export async function loadPreset(name: string): Promise<void> {
       break;
     case "key-rotation":
       await loadKeyRotation();
+      break;
+    case "level-2":
+      await loadLevel2Demo();
       break;
     default:
       console.warn("Unknown preset:", name);
