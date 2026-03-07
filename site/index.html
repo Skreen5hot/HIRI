@@ -449,6 +449,9 @@
   <div class="loading-overlay" id="loading">
     <div class="loading-text">Initializing HIRI Protocol...</div>
     <div class="loading-sub">Loading Oxigraph WASM engine</div>
+    <div class="loading-sub" style="margin-top:0.25rem;font-size:0.7rem;color:var(--text-muted)">
+      Network monitor activates after WASM engine load. The Oxigraph WASM binary is the only network resource; all protocol operations are local.
+    </div>
   </div>
 
   <!-- Header -->
@@ -461,7 +464,7 @@
       </nav>
     </div>
     <div class="header-right">
-      <div class="network-indicator" id="networkIndicator" title="Monitors fetch, XHR, and sendBeacon calls during operations">
+      <div class="network-indicator" id="networkIndicator" title="Network monitor activates after WASM load. Monitors fetch, XHR, and sendBeacon calls. The Oxigraph WASM binary is the only network resource.">
         <div class="network-dot" id="networkDot"></div>
         <span id="networkLabel">Zero Network</span>
       </div>
@@ -470,7 +473,9 @@
         <option value="simple-verify">Simple Verify (M1, M3, M4)</option>
         <option value="chain-delta">Chain with Delta (M1-M4)</option>
         <option value="key-rotation">Key Rotation (M1-M5)</option>
+        <option value="level-2">Level 2: URDNA2015 + CIDv1 (M7-M8)</option>
       </select>
+      <span id="presetIndicator" style="font-size:0.75rem;color:var(--text-muted);display:none"></span>
     </div>
   </div>
 
@@ -620,6 +625,16 @@
           demo.initQueryTab(document.getElementById("query-content"));
           demo.initResolveTab(document.getElementById("resolve-content"));
         }
+        // Show loaded preset indicator
+        const indicator = document.getElementById("presetIndicator");
+        const labels = {
+          "simple-verify": "Simple Verify",
+          "chain-delta": "Chain with Delta",
+          "key-rotation": "Key Rotation",
+          "level-2": "Level 2: URDNA2015 + CIDv1",
+        };
+        indicator.textContent = "Loaded: " + (labels[preset] || preset);
+        indicator.style.display = "inline";
         e.target.value = "";
       });
 

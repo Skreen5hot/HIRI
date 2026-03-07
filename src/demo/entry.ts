@@ -30,6 +30,7 @@ export {
 } from "../kernel/chain.js";
 export { buildDelta, buildRDFDelta, verifyDelta } from "../kernel/delta.js";
 export { applyPatch } from "../kernel/json-patch.js";
+export { parseNQuads, serializeNQuads, applyRDFPatch } from "../kernel/rdf-patch.js";
 export { validateGenesis } from "../kernel/genesis.js";
 
 // Resolution
@@ -60,6 +61,12 @@ export {
 // Utilities
 export { stableStringify } from "../kernel/canonicalize.js";
 export { JCSCanonicalizer } from "../kernel/jcs-canonicalizer.js";
+export { URDNA2015Canonicalizer } from "../adapters/canonicalization/urdna2015-canonicalizer.js";
+export { CIDv1Algorithm } from "../adapters/content-addressing/cidv1-algorithm.js";
+export {
+  createSecureDocumentLoader,
+  createCatalogDocumentLoader,
+} from "../adapters/canonicalization/secure-document-loader.js";
 export { HiriURI } from "../kernel/hiri-uri.js";
 export { HashRegistry } from "../kernel/hash-registry.js";
 export { defaultCryptoProvider } from "../adapters/crypto/provider.js";
