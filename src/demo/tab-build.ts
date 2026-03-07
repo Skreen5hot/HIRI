@@ -206,19 +206,20 @@ async function handleSign(): Promise<void> {
     const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
     const manifestParams: ManifestParams = {
       id: `hiri://${demoState.authority}/data/person`,
-      version: 1,
+      version: "1",
       branch: "main",
       created: timestamp,
       contentHash,
       contentFormat: "application/ld+json",
       contentSize: contentBytes.length,
+      addressing: "raw-sha256",
       canonicalization: "JCS",
     };
     const unsigned = buildUnsignedManifest(manifestParams);
     steps.push(`3. Build unsigned manifest: version=${unsigned["hiri:version"]}`);
 
     // Step 4: Sign manifest
-    const signed = await signManifest(unsigned, keypair, timestamp, crypto);
+    const signed = await signManifest(unsigned, keypair, timestamp, "JCS", crypto);
     steps.push(`4. Sign manifest: proofValue=${signed["hiri:signature"].proofValue.substring(0, 20)}...`);
 
     // Step 5: Hash the signed manifest
@@ -239,7 +240,7 @@ async function handleSign(): Promise<void> {
       manifestHash,
       contentBytes,
       contentHash,
-      version: 1,
+      version: "1",
     });
 
     // Store in storage adapter for resolution
@@ -320,23 +321,24 @@ async function handleUpdate(): Promise<void> {
     const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
     const unsigned = buildUnsignedManifest({
       id: `hiri://${demoState.authority}/data/person`,
-      version: demoState.manifests.length + 1,
+      version: String(demoState.manifests.length + 1),
       branch: "main",
       created: timestamp,
       contentHash: v2ContentHash,
       contentFormat: "application/ld+json",
       contentSize: v2ContentBytes.length,
+      addressing: "raw-sha256",
       canonicalization: "JCS",
       chain,
       delta: {
         hash: deltaHash,
-        format: "json-patch",
+        format: "application/json-patch+json",
         appliesTo: prevEntry.contentHash,
         operations: operations.length,
       },
     });
 
-    const signed = await signManifest(unsigned, keypair, timestamp, crypto);
+    const signed = await signManifest(unsigned, keypair, timestamp, "JCS", crypto);
     const manifestHash = await hashManifest(signed, crypto);
     steps.push(`5. Signed V${unsigned["hiri:version"]}: ${manifestHash.substring(0, 24)}...`);
 

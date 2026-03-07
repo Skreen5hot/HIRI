@@ -347,7 +347,7 @@ Rules:
   &bull; Layer 0 MUST NOT import from Layer 1 or Layer 2
   &bull; All crypto operations injected via CryptoProvider interface
   &bull; Kernel code has zero non-deterministic API calls
-  &bull; Enforced by automated purity tests (81/81 passing)</div>
+  &bull; Enforced by automated purity tests (144/144 passing)</div>
 
     <p>
       The kernel contains all protocol logic as <strong>pure functions</strong>. No
@@ -364,7 +364,7 @@ git clone &lt;repository-url&gt;
 cd hiri
 npm install
 
-# Run all tests (81/81)
+# Run all tests (144/144)
 npm test
 
 # Run kernel purity check
@@ -392,21 +392,16 @@ npm run build:demo</code></pre>
     </p>
 
     <pre><code>import { generateKeypair } from "./adapters/crypto/ed25519.js";
-import { deriveAuthorityAsync } from "./kernel/authority.js";
-import { defaultCryptoProvider } from "./adapters/crypto/provider.js";
+import { deriveAuthority } from "./kernel/authority.js";
 
 // Generate an Ed25519 keypair
 const keypair = await generateKeypair("key-1");
 
-// Derive authority: hash(publicKey) &rarr; base58 &rarr; truncate 20 chars
-const authority = await deriveAuthorityAsync(
-  keypair.publicKey,
-  keypair.algorithm,
-  defaultCryptoProvider,
-);
+// Derive authority: "z" + base58btc(publicKey) &mdash; no hashing, no truncation
+const authority = deriveAuthority(keypair.publicKey, keypair.algorithm);
 
-// Result: "key:ed25519:FTVfKaT7wJHVywEPbGCG"
-// URI:    "hiri://key:ed25519:FTVfKaT7wJHVywEPbGCG"</code></pre>
+// Result: "key:ed25519:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+// URI:    "hiri://key:ed25519:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"</code></pre>
 
     <div class="callout">
       <strong>Authority derivation is deterministic:</strong> the same public key always
@@ -475,18 +470,19 @@ const contentHash = await crypto.hash(contentBytes);
 // 2. Build unsigned manifest
 const unsigned = buildUnsignedManifest({
   id: `hiri://${authority}/data/person`,
-  version: 1,
+  version: "1",
   branch: "main",
   created: "2025-01-15T00:00:00Z",
   contentHash,
+  addressing: "raw-sha256",
   contentFormat: "application/ld+json",
   contentSize: contentBytes.length,
   canonicalization: "JCS",
 });
 
-// 3. Sign
+// 3. Sign (profile must match content.canonicalization)
 const signed = await signManifest(
-  unsigned, keypair, "2025-01-15T00:00:00Z", crypto
+  unsigned, keypair, "2025-01-15T00:00:00Z", "JCS", crypto
 );
 
 // 4. Hash the signed manifest (for chain linking)
@@ -542,9 +538,7 @@ const chainResult = await verifyChain(
     <h3>Deltas</h3>
 
     <p>
-      Each chain link can include a <strong>JSON Patch delta</strong> (RFC 6902) describing
-      what changed. During chain walking, the resolver tries the delta path first. If the
-      delta produces content whose hash doesn't match, it falls back to fetching full content.
+      Each chain link can include a <strong>delta</strong> describing what changed. JCS-profile manifests use JSON Patch (RFC 6902); URDNA2015-profile manifests use RDF Patch (triple-level add/remove). During chain walking, the resolver tries the delta path first. If the delta produces content whose hash doesn't match, it falls back to fetching full content.
     </p>
 
     <pre><code>import { buildDelta, verifyDelta } from "./kernel/delta.js";
@@ -558,7 +552,7 @@ const { delta, serialized } = await buildDelta(
 // Verify: apply patch, hash result, compare to expected
 const result = await verifyDelta(
   delta, patchOperations, previousContentBytes,
-  currentContentHash, crypto
+  currentContentHash, "JCS", crypto
 );</code></pre>
 
     <!-- ───────────────── STEP 4 ───────────────── -->
@@ -766,8 +760,8 @@ const mode = resolveEntailmentMode(manifest["hiri:semantics"]);
       <tr><th>Function</th><th>Signature</th><th>Description</th></tr>
       <tr>
         <td><code>signManifest</code></td>
-        <td><code>(unsigned, key, timestamp, crypto) &rarr; Promise&lt;ResolutionManifest&gt;</code></td>
-        <td>Sign a manifest with Ed25519. Returns signed manifest with <code>hiri:signature</code>.</td>
+        <td><code>(unsigned, key, timestamp, profile, crypto) &rarr; Promise&lt;ResolutionManifest&gt;</code></td>
+        <td>Sign a manifest with Ed25519. Profile must match <code>content.canonicalization</code>.</td>
       </tr>
       <tr>
         <td><code>verifyManifest</code></td>
@@ -776,8 +770,8 @@ const mode = resolveEntailmentMode(manifest["hiri:semantics"]);
       </tr>
       <tr>
         <td><code>signKeyDocument</code></td>
-        <td><code>(unsigned, key, timestamp, crypto) &rarr; Promise&lt;KeyDocument&gt;</code></td>
-        <td>Sign a Key Document.</td>
+        <td><code>(unsigned, key, timestamp, profile, crypto) &rarr; Promise&lt;KeyDocument&gt;</code></td>
+        <td>Sign a Key Document. Profile must match content canonicalization.</td>
       </tr>
       <tr>
         <td><code>verifyKeyDocument</code></td>
@@ -894,7 +888,7 @@ const mode = resolveEntailmentMode(manifest["hiri:semantics"]);
       <tr><td><code>ResolutionManifest</code></td><td>Signed manifest with @context, @id, version, content, chain, delta, signature</td></tr>
       <tr><td><code>KeyDocument</code></td><td>Key lifecycle document: activeKeys, rotatedKeys, revokedKeys, policies</td></tr>
       <tr><td><code>StorageAdapter</code></td><td>Content-addressed storage: <code>get(hash) &rarr; Uint8Array</code>, <code>put(hash, bytes)</code></td></tr>
-      <tr><td><code>ManifestDelta</code></td><td>Delta metadata: hash, format ("json-patch"), appliesTo, operations count</td></tr>
+      <tr><td><code>ManifestDelta</code></td><td>Delta metadata: hash, format ("application/json-patch+json" or "application/rdf-patch"), appliesTo, operations count</td></tr>
       <tr><td><code>ChainWalkResult</code></td><td>Chain verification result: valid, depth, warnings, manifests</td></tr>
       <tr><td><code>KeyVerificationResult</code></td><td>Key status result: keyStatus, valid, keyId, warning</td></tr>
       <tr><td><code>EntailmentMode</code></td><td><code>"none"</code> | <code>"materialized"</code> | <code>"runtime"</code></td></tr>
@@ -910,10 +904,10 @@ const mode = resolveEntailmentMode(manifest["hiri:semantics"]);
     <ul>
       <li><strong>No non-deterministic APIs in kernel:</strong> no <code>Date.now()</code>, <code>Math.random()</code>, <code>crypto.getRandomValues()</code>, <code>process.env</code>, <code>fetch</code>, <code>XMLHttpRequest</code></li>
       <li><strong>No kernel &rarr; adapter imports:</strong> kernel code never imports from <code>src/adapters/</code></li>
-      <li><strong>Deterministic serialization:</strong> all hashing uses JCS canonicalization via <code>stableStringify()</code></li>
+      <li><strong>Deterministic serialization:</strong> JCS via <code>stableStringify()</code> or URDNA2015 via injected <code>Canonicalizer</code></li>
       <li><strong>Multibase encoding:</strong> signatures and keys use <code>z</code> prefix + base58</li>
       <li><strong>Timestamps as parameters:</strong> all temporal operations accept ISO 8601 strings, never call the system clock</li>
-      <li><strong>Zero runtime dependencies:</strong> only devDependencies (TypeScript, test runner, esbuild)</li>
+      <li><strong>Minimal runtime dependencies:</strong> <code>@noble/ed25519</code>, <code>jsonld</code>, <code>oxigraph</code>, <code>multiformats</code>, <code>@ipld/dag-cbor</code></li>
     </ul>
 
     <div class="callout warning">

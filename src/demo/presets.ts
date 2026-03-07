@@ -11,7 +11,7 @@
  */
 
 import { generateKeypair } from "../adapters/crypto/ed25519.js";
-import { deriveAuthorityAsync } from "../kernel/authority.js";
+import { deriveAuthority } from "../kernel/authority.js";
 import { buildKeyDocument, buildUnsignedManifest, prepareContent } from "../kernel/manifest.js";
 import { signKeyDocument, signManifest } from "../kernel/signing.js";
 import { hashManifest } from "../kernel/chain.js";
@@ -89,15 +89,15 @@ async function signAndStore(
   timestamp: string,
   contentBytes: Uint8Array,
   contentHash: string,
-  version: number,
+  version: string,
 ): Promise<ManifestEntry> {
-  const signed = await signManifest(unsigned, keypair, timestamp, crypto);
+  const signed = await signManifest(unsigned, keypair, timestamp, "JCS", crypto);
   const manifestHash = await hashManifest(signed, crypto);
 
   await demoState.storage.put(manifestHash, new TextEncoder().encode(stableStringify(signed)));
   await demoState.storage.put(contentHash, contentBytes);
 
-  const entry: ManifestEntry = { manifest: signed, manifestHash, contentBytes, contentHash, version };
+  const entry: ManifestEntry = { manifest: signed, manifestHash, contentBytes, contentHash, version: String(version) };
   demoState.manifests.push(entry);
   return entry;
 }
@@ -115,7 +115,7 @@ async function loadSimpleVerify(): Promise<void> {
   demoState.clear();
 
   const key1 = await generateKeypair("key-1");
-  const authority = await deriveAuthorityAsync(key1.publicKey, key1.algorithm, crypto);
+  const authority = deriveAuthority(key1.publicKey, key1.algorithm);
   demoState.keypairs.push({ keypair: key1, keyId: key1.keyId, authority });
   demoState.authority = authority;
   demoState.initialized = true;
@@ -127,16 +127,17 @@ async function loadSimpleVerify(): Promise<void> {
   // Manifest
   const unsigned = buildUnsignedManifest({
     id: `hiri://${authority}/data/person`,
-    version: 1,
+    version: "1",
     branch: "main",
     created: "2025-01-15T00:00:00Z",
     contentHash: hash,
     contentFormat: "application/ld+json",
     contentSize: bytes.length,
+    addressing: "raw-sha256",
     canonicalization: "JCS",
   });
 
-  await signAndStore(unsigned, key1, "2025-01-15T00:00:00Z", bytes, hash, 1);
+  await signAndStore(unsigned, key1, "2025-01-15T00:00:00Z", bytes, hash, "1");
 }
 
 // ── Preset: Chain with Delta ──────────────────────────────────────────
@@ -145,7 +146,7 @@ async function loadChainWithDelta(): Promise<void> {
   demoState.clear();
 
   const key1 = await generateKeypair("key-1");
-  const authority = await deriveAuthorityAsync(key1.publicKey, key1.algorithm, crypto);
+  const authority = deriveAuthority(key1.publicKey, key1.algorithm);
   demoState.keypairs.push({ keypair: key1, keyId: key1.keyId, authority });
   demoState.authority = authority;
   demoState.initialized = true;
@@ -156,12 +157,12 @@ async function loadChainWithDelta(): Promise<void> {
   const v1Content = personV1(authority);
   const v1 = await prepContent(v1Content);
   const v1Unsigned = buildUnsignedManifest({
-    id: resourceUri, version: 1, branch: "main",
+    id: resourceUri, version: "1", branch: "main",
     created: "2025-01-15T00:00:00Z",
     contentHash: v1.hash, contentFormat: "application/ld+json",
-    contentSize: v1.bytes.length, canonicalization: "JCS",
+    contentSize: v1.bytes.length, addressing: "raw-sha256", canonicalization: "JCS",
   });
-  const v1Entry = await signAndStore(v1Unsigned, key1, "2025-01-15T00:00:00Z", v1.bytes, v1.hash, 1);
+  const v1Entry = await signAndStore(v1Unsigned, key1, "2025-01-15T00:00:00Z", v1.bytes, v1.hash, "1");
 
   // ── V2 (valid delta: Portland→Seattle) ──
   const v2Content = personV2(authority);
@@ -176,20 +177,20 @@ async function loadChainWithDelta(): Promise<void> {
   await demoState.storage.put(v2DeltaHash, v2DeltaBytes);
 
   const v2Unsigned = buildUnsignedManifest({
-    id: resourceUri, version: 2, branch: "main",
+    id: resourceUri, version: "2", branch: "main",
     created: "2025-03-01T00:00:00Z",
     contentHash: v2.hash, contentFormat: "application/ld+json",
-    contentSize: v2.bytes.length, canonicalization: "JCS",
+    contentSize: v2.bytes.length, addressing: "raw-sha256", canonicalization: "JCS",
     chain: {
       previous: v1Entry.manifestHash, previousBranch: "main",
       genesisHash: v1Entry.manifestHash, depth: 2,
     },
     delta: {
-      hash: v2DeltaHash, format: "json-patch",
+      hash: v2DeltaHash, format: "application/json-patch+json",
       appliesTo: v1.hash, operations: v2DeltaOps.length,
     },
   });
-  const v2Entry = await signAndStore(v2Unsigned, key1, "2025-03-01T00:00:00Z", v2.bytes, v2.hash, 2);
+  const v2Entry = await signAndStore(v2Unsigned, key1, "2025-03-01T00:00:00Z", v2.bytes, v2.hash, "2");
 
   // ── V3 (semantically corrupted delta) ──
   // Semantic delta corruption: delta applies cleanly but produces wrong content hash.
@@ -208,23 +209,23 @@ async function loadChainWithDelta(): Promise<void> {
   await demoState.storage.put(wrongDeltaHash, wrongDeltaBytes);
 
   const v3Unsigned = buildUnsignedManifest({
-    id: resourceUri, version: 3, branch: "main",
+    id: resourceUri, version: "3", branch: "main",
     created: "2025-05-01T00:00:00Z",
     contentHash: v3.hash, // Correct content hash
     contentFormat: "application/ld+json",
-    contentSize: v3.bytes.length, canonicalization: "JCS",
+    contentSize: v3.bytes.length, addressing: "raw-sha256", canonicalization: "JCS",
     chain: {
       previous: v2Entry.manifestHash, previousBranch: "main",
       genesisHash: v1Entry.manifestHash, depth: 3,
     },
     delta: {
       hash: wrongDeltaHash, // WRONG delta hash
-      format: "json-patch",
+      format: "application/json-patch+json",
       appliesTo: v2.hash,
       operations: wrongDeltaOps.length,
     },
   });
-  await signAndStore(v3Unsigned, key1, "2025-05-01T00:00:00Z", v3.bytes, v3.hash, 3);
+  await signAndStore(v3Unsigned, key1, "2025-05-01T00:00:00Z", v3.bytes, v3.hash, "3");
 }
 
 // ── Preset: Key Rotation ──────────────────────────────────────────────
@@ -235,7 +236,7 @@ async function loadKeyRotation(): Promise<void> {
   const keyA = await generateKeypair("key-1");
   const keyB = await generateKeypair("key-2");
   const keyC = await generateKeypair("key-3");
-  const authority = await deriveAuthorityAsync(keyA.publicKey, keyA.algorithm, crypto);
+  const authority = deriveAuthority(keyA.publicKey, keyA.algorithm);
 
   demoState.keypairs.push(
     { keypair: keyA, keyId: keyA.keyId, authority },
@@ -269,7 +270,7 @@ async function loadKeyRotation(): Promise<void> {
   const unsignedKeyDoc = buildKeyDocument({
     authority,
     authorityType: "key",
-    version: 3,
+    version: "3",
     activeKeys: [{
       "@id": `${keyDocUri}#key-3`,
       "@type": "Ed25519VerificationKey2020",
@@ -304,34 +305,34 @@ async function loadKeyRotation(): Promise<void> {
     },
   });
 
-  demoState.keyDocument = await signKeyDocument(unsignedKeyDoc, keyC, "2025-07-01T00:00:00Z", crypto);
+  demoState.keyDocument = await signKeyDocument(unsignedKeyDoc, keyC, "2025-07-01T00:00:00Z", "JCS", crypto);
 
   // Build chained manifests spanning the key rotation
   // V1: signed by Key B at 2025-04-01 (Key B active)
   const v1Content = personV1(authority);
   const v1 = await prepContent(v1Content);
   const v1Unsigned = buildUnsignedManifest({
-    id: resourceUri, version: 1, branch: "main",
+    id: resourceUri, version: "1", branch: "main",
     created: "2025-04-01T00:00:00Z",
     contentHash: v1.hash, contentFormat: "application/ld+json",
-    contentSize: v1.bytes.length, canonicalization: "JCS",
+    contentSize: v1.bytes.length, addressing: "raw-sha256", canonicalization: "JCS",
   });
-  const v1Entry = await signAndStore(v1Unsigned, keyB, "2025-04-01T00:00:00Z", v1.bytes, v1.hash, 1);
+  const v1Entry = await signAndStore(v1Unsigned, keyB, "2025-04-01T00:00:00Z", v1.bytes, v1.hash, "1");
 
   // V2: signed by Key C at 2025-08-01 (Key C active, after rotation)
   const v2Content = personV2(authority);
   const v2 = await prepContent(v2Content);
   const v2Unsigned = buildUnsignedManifest({
-    id: resourceUri, version: 2, branch: "main",
+    id: resourceUri, version: "2", branch: "main",
     created: "2025-08-01T00:00:00Z",
     contentHash: v2.hash, contentFormat: "application/ld+json",
-    contentSize: v2.bytes.length, canonicalization: "JCS",
+    contentSize: v2.bytes.length, addressing: "raw-sha256", canonicalization: "JCS",
     chain: {
       previous: v1Entry.manifestHash, previousBranch: "main",
       genesisHash: v1Entry.manifestHash, depth: 2,
     },
   });
-  await signAndStore(v2Unsigned, keyC, "2025-08-01T00:00:00Z", v2.bytes, v2.hash, 2);
+  await signAndStore(v2Unsigned, keyC, "2025-08-01T00:00:00Z", v2.bytes, v2.hash, "2");
 }
 
 // ── Public API ─────────────────────────────────────────────────────────
