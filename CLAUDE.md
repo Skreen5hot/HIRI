@@ -63,6 +63,7 @@ When the Orchestrator uses these phrases, immediately adopt the persona and its 
 - If a change requires modifying more than 3 files simultaneously, STOP and request an **Architectural Review** from the Orchestrator before proceeding
 - When blocked by a deprecated API, missing dependency, or ambiguous requirement, STOP and ask the Orchestrator. Do not guess.
 - MUST NOT commit or push to the repository without explicit Orchestrator instruction
+- MUST NOT commit directly to `main`. All work MUST be committed to `dev` first, then merged to `main` via `git checkout main && git merge dev`. After pushing main, always sync dev: `git checkout dev && git merge main && git push origin dev`.
 
 ## 5. Session Workflow
 
@@ -115,6 +116,6 @@ Layer 2: src/demo/            <- Browser demo UI.
 | `src/kernel/graph-builder.ts` | JSON-LD to RDF graph construction |
 | `src/kernel/query-executor.ts` | SPARQL query execution |
 | `project/ROADMAP.md` | Current phase, tasks, acceptance criteria |
-| `project/HIRI-Protocol-Spec.md` | Protocol specification (v2.1) |
-| `project/HIRI-MVP-Milestones-v1.4.md` | Milestone test matrices and interface contracts |
+| `project/HIRI-Protocol-Spec.md` | Protocol specification (v3.1.1) |
+| `project/HIRI-MVP-Milestones-v3.md` | Milestone definitions, test matrices, interface contracts |
 | `project/DECISIONS.md` | Architecture decision log |
