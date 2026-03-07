@@ -471,3 +471,160 @@ Extended `src/kernel/types.ts` with Milestone 5 types:
 | Month/year duration parsing | Deferred | Only `PnD` format needed; `parseDuration` throws on month/year |
 | KeyDocument versioning/evolution | Deferred | Single KeyDocument per authority in MVP |
 | `hiri:version` typed as `number` | Unchanged | `parseVersion`/`encodeVersion` ready for migration |
+
+
+---
+
+## Phase 6: v3.1.1 Core Migration (Milestone 6)
+
+**Goal:** Migrate from v2.1.0 to v3.1.1 spec: full-key authority (no truncation), string-only versions, profile symmetry rule, addressing field, delta-canonicalization coupling, and verification status reporting.
+
+**Status:** COMPLETE
+
+**Governing Spec:** HIRI Protocol Specification v3.1.1, §18.1 (Level 1: Core)
+
+### 6.1 Kernel Changes
+
+**Status:** Complete
+
+| Module | Change |
+|--------|--------|
+| `authority.ts` | Full public key encoding (no hashing/truncation) |
+| `version.ts` | String-only versions (BigInt parsing, number input rejected) |
+| `manifest.ts` | Added `addressing` field to ManifestContent |
+| `signing.ts` | Added `profile` parameter, Profile Symmetry Rule, canonicalization in signature |
+| `delta.ts` | Delta-canonicalization coupling (JCS→JSON Patch, URDNA2015→RDF Patch) |
+
+### 6.2 Domain Tests
+
+**Status:** Complete — 20/20 pass (95/95 total with M1–M5)
+
+Tests 6.1–6.20 cover authority format, round-trip, version enforcement, addressing field, profile symmetry (signing + verification), delta coupling, context URL, verification status, and full manifest round-trip.
+
+---
+
+## Phase 7: Level 2 Interoperable Conformance (Milestone 7)
+
+**Goal:** Implement URDNA2015 canonicalization, CIDv1-dag-cbor content addressing, secure document loader, and URDNA2015 signing/verification for Level 2 Interoperable conformance.
+
+**Status:** COMPLETE
+
+**Governing Spec:** HIRI Protocol Specification v3.1.1, §18.2 (Level 2: Interoperable)
+
+**Note:** This milestone merges the original M7 (URDNA2015) and M8 (CIDv1) from the governing milestones doc. RDF Patch + Level 2 Integration becomes the next milestone (M8).
+
+### 7.1 New Kernel Types and Modules
+
+**Status:** Complete
+
+| Module | Purpose |
+|--------|---------|
+| `types.ts` | Added `DocumentLoader`, `Canonicalizer`, `CanonicalizationLimits` |
+| `jcs-canonicalizer.ts` | JCS Canonicalizer (kernel-safe, ignores documentLoader) |
+
+### 7.2 New Adapter Modules
+
+**Status:** Complete — 3 new modules
+
+| Module | Purpose |
+|--------|---------|
+| `adapters/canonicalization/secure-document-loader.ts` | Embedded JSON-LD contexts, blocks remote fetches, contextCatalog support |
+| `adapters/canonicalization/urdna2015-canonicalizer.ts` | URDNA2015 via jsonld.canonize(), resource limits (§7.7) |
+| `adapters/content-addressing/cidv1-algorithm.ts` | CIDv1 dag-cbor content addressing, profile-bound envelope |
+
+### 7.3 Modified Kernel Modules
+
+**Status:** Complete
+
+| Module | Change |
+|--------|--------|
+| `signing.ts` | Canonicalizer + documentLoader injection (ADR-008) |
+| `chain.ts` | Canonicalizer + documentLoader threading through hash/validate/walk |
+| `hash-registry.ts` | CIDv1 string detection (base32lower 'b' prefix) |
+| `resolve.ts` | Canonicalizer + documentLoader in ResolveOptions |
+
+### 7.4 Key Design Decisions (ADR-008, ADR-009, ADR-010)
+
+- Canonicalizer interface injected into signing functions, mirroring CryptoProvider
+- CIDv1Algorithm is profile-bound: different profiles produce different CIDs
+- @ipld/dag-cbor + multiformats approved as runtime dependencies
+
+### 7.5 Domain Tests
+
+**Status:** Complete — 27/27 pass (122/122 total with M1–M6)
+
+| Test Range | Category | Count |
+|-----------|----------|-------|
+| 7.1–7.5 | Appendix B.8 URDNA2015 equivalence vectors | 5 |
+| 7.6–7.10 | Secure document loader + context catalog | 5 |
+| 7.11 | Canonicalization resource limits | 1 |
+| 7.12–7.18 | CIDv1 content addressing | 7 |
+| 7.19–7.23 | URDNA2015 signing/verification + profile symmetry | 5 |
+| 7.24–7.27 | Chain integration + backward compat + CBOR determinism | 4 |
+
+### Technical Debt
+
+| Item | Status | Notes |
+|------|--------|-------|
+| HIRI JSON-LD context authoring | Minimal | Embedded context maps all hiri: terms; not formally published |
+| Context integrity hashes (§7.6) | Deferred | SHA-256 hashes of embedded contexts not yet computed/verified at build time |
+| hiri:contextCatalog hash verification | Deferred | Catalog stores documents directly; SHA-256 verification at load time not yet implemented |
+
+---
+
+## Phase 8: RDF Patch + Delta Atomicity + Level 2 Integration (Milestone 8)
+
+**Goal:** Complete the delta verification pipeline for URDNA2015-profile manifests using RDF Patch format, verify all four Level 2 combinations (JCS/URDNA2015 x raw-sha256/CIDv1), and ensure backward compatibility.
+
+**Status:** COMPLETE
+
+**Governing Spec:** HIRI Protocol Specification v3.1.1, Milestones v1.4
+
+### 8.1 RDF Patch Module (`src/kernel/rdf-patch.ts`) — NEW
+
+**Status:** Complete
+
+Pure kernel module for N-Quads set manipulation: `parseNQuads`, `serializeNQuads`, `operationToQuad`, `applyRDFPatch`. No external dependencies. RDF set semantics: remove-of-nonexistent is a no-op.
+
+### 8.2 Canonicalizer Interface Extension
+
+**Status:** Complete
+
+Added optional `canonicalizeNQuads?(nquads: string, documentLoader: DocumentLoader): Promise<Uint8Array>` to `Canonicalizer` interface. Implemented in `URDNA2015Canonicalizer` using `jsonld.canonize()` with `inputFormat: 'application/n-quads'`.
+
+### 8.3 Delta Module Update (`src/kernel/delta.ts`)
+
+**Status:** Complete
+
+- Added `buildRDFDelta()` for RDF Patch delta construction
+- Expanded `verifyDelta()` with URDNA2015 path: canonicalize JSON-LD, parse N-Quads, apply RDF Patch, re-canonicalize, hash, compare
+- Format-aware `appliesTo` check: JCS hashes raw bytes, URDNA2015 canonicalizes first (ADR-011)
+
+### 8.4 Chain Walker Update (`src/kernel/chain.ts`)
+
+**Status:** Complete
+
+- Threaded `canonicalizer` and `documentLoader` to `verifyDelta()` calls
+- Added delta verification block to `verifyChainWithKeyLifecycle()` (previously missing)
+
+### 8.5 Files Modified
+
+| Action | File |
+|--------|------|
+| Modify | `src/kernel/types.ts` — `RDFPatchOperation`, `canonicalizeNQuads` on Canonicalizer |
+| Create | `src/kernel/rdf-patch.ts` — pure kernel RDF Patch operations |
+| Modify | `src/kernel/delta.ts` — RDF Patch support, format-aware appliesTo |
+| Modify | `src/kernel/chain.ts` — canonicalizer/documentLoader threading, lifecycle delta |
+| Modify | `src/adapters/canonicalization/urdna2015-canonicalizer.ts` — `canonicalizeNQuads` method |
+| Create | `tests/phase8.test.ts` — 22 tests |
+
+### 8.6 Domain Tests
+
+**Status:** Complete — 22/22 pass (144/144 total with M1–M7)
+
+| Test Range | Category | Count |
+|-----------|----------|-------|
+| 8.1–8.9 | RDF Patch unit tests | 9 |
+| 8.10–8.13 | RDF Patch integration (delta verification, blank nodes) | 4 |
+| 8.14–8.16 | Chain + delta E2E (chain walker, fallback, coupling) | 3 |
+| 8.17–8.22 | Level 2 combination matrix + backward compat | 6 |

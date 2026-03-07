@@ -14,10 +14,14 @@
  */
 
 import { stableStringify } from "./canonicalize.js";
+import { JCSCanonicalizer } from "./jcs-canonicalizer.js";
+import { parseVersion } from "./version.js";
 import { verifyManifest } from "./signing.js";
 import { verifyDelta } from "./delta.js";
 import { verifyManifestWithKeyLifecycle } from "./key-lifecycle.js";
 import type {
+  Canonicalizer,
+  DocumentLoader,
   CryptoProvider,
   ResolutionManifest,
   KeyDocument,
@@ -43,9 +47,12 @@ import type {
 export async function hashManifest(
   manifest: ResolutionManifest,
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<string> {
-  const canonical = stableStringify(manifest, false);
-  const bytes = new TextEncoder().encode(canonical);
+  const canon = canonicalizer ?? new JCSCanonicalizer();
+  const loader: DocumentLoader = documentLoader ?? (async (url: string) => { throw new Error("No document loader: " + url); });
+  const bytes = await canon.canonicalize(manifest as unknown as Record<string, unknown>, loader);
   return crypto.hash(bytes);
 }
 
@@ -64,6 +71,8 @@ export async function validateChainLink(
   current: ResolutionManifest,
   previous: ResolutionManifest,
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<ChainValidation> {
   const chain = current["hiri:chain"];
   if (!chain) {
@@ -79,7 +88,7 @@ export async function validateChainLink(
   }
 
   // Rule 2: Version monotonicity
-  if (current["hiri:version"] <= previous["hiri:version"]) {
+  if (parseVersion(current["hiri:version"]) <= parseVersion(previous["hiri:version"])) {
     return {
       valid: false,
       reason: `Version not monotonically increasing: current=${current["hiri:version"]}, previous=${previous["hiri:version"]}`,
@@ -87,7 +96,7 @@ export async function validateChainLink(
   }
 
   // Rule 3: Previous hash
-  const previousHash = await hashManifest(previous, crypto);
+  const previousHash = await hashManifest(previous, crypto, canonicalizer, documentLoader);
   if (chain.previous !== previousHash) {
     return {
       valid: false,
@@ -160,6 +169,8 @@ export async function verifyChain(
   fetchManifest: ManifestFetcher,
   fetchContent: ContentFetcher,
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<ChainWalkResult> {
   const warnings: string[] = [];
   let current = head;
@@ -170,7 +181,8 @@ export async function verifyChain(
     depth++;
 
     // Verify signature of current manifest
-    const sigValid = await verifyManifest(current, publicKey, crypto);
+    const profile = current["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
+    const sigValid = await verifyManifest(current, publicKey, profile, crypto, canonicalizer, documentLoader);
     if (!sigValid) {
       return {
         valid: false,
@@ -199,7 +211,7 @@ export async function verifyChain(
     }
 
     // Storage tampering check: hash of fetched manifest must match
-    const computedHash = await hashManifest(previous, crypto);
+    const computedHash = await hashManifest(previous, crypto, canonicalizer, documentLoader);
     if (computedHash !== chain.previous) {
       return {
         valid: false,
@@ -210,7 +222,7 @@ export async function verifyChain(
     }
 
     // Validate chain link rules
-    const linkResult = await validateChainLink(current, previous, crypto);
+    const linkResult = await validateChainLink(current, previous, crypto, canonicalizer, documentLoader);
     if (!linkResult.valid) {
       return {
         valid: false,
@@ -232,14 +244,18 @@ export async function verifyChain(
         if (deltaOpsBytes) {
           const deltaOps = JSON.parse(
             new TextDecoder().decode(deltaOpsBytes),
-          ) as JsonPatchOperation[];
+          );
 
+          const profile2 = current["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
           const deltaResult = await verifyDelta(
             delta,
             deltaOps,
             prevContentBytes,
             current["hiri:content"].hash,
+            profile2,
             crypto,
+            canonicalizer,
+            documentLoader,
           );
 
           if (!deltaResult.valid) {
@@ -294,6 +310,8 @@ export async function verifyChainWithKeyLifecycle(
   fetchManifest: ManifestFetcher,
   fetchContent: ContentFetcher,
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<ChainWalkResult> {
   const warnings: string[] = [];
   const failures: ChainFailure[] = [];
@@ -351,7 +369,7 @@ export async function verifyChainWithKeyLifecycle(
     }
 
     // Storage tampering check
-    const computedHash = await hashManifest(previous, crypto);
+    const computedHash = await hashManifest(previous, crypto, canonicalizer, documentLoader);
     if (computedHash !== chain.previous) {
       return {
         valid: false,
@@ -363,7 +381,7 @@ export async function verifyChainWithKeyLifecycle(
     }
 
     // Validate structural chain link rules (unchanged from M2)
-    const linkResult = await validateChainLink(current, previous, crypto);
+    const linkResult = await validateChainLink(current, previous, crypto, canonicalizer, documentLoader);
     if (!linkResult.valid) {
       return {
         valid: false,
@@ -372,6 +390,52 @@ export async function verifyChainWithKeyLifecycle(
         warnings,
         failures: failures.length > 0 ? failures : undefined,
       };
+    }
+
+    // Delta verification (if present): try delta, fall back to full content
+    const delta = current["hiri:delta"];
+    if (delta) {
+      const prevContentBytes = await fetchContent(previous["hiri:content"].hash);
+      if (prevContentBytes) {
+        const deltaOpsBytes = await fetchContent(delta.hash);
+        if (deltaOpsBytes) {
+          const deltaOps = JSON.parse(
+            new TextDecoder().decode(deltaOpsBytes),
+          );
+
+          const profile2 = current["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
+          const deltaResult = await verifyDelta(
+            delta,
+            deltaOps,
+            prevContentBytes,
+            current["hiri:content"].hash,
+            profile2,
+            crypto,
+            canonicalizer,
+            documentLoader,
+          );
+
+          if (!deltaResult.valid) {
+            // Delta failed — fall back to full content verification
+            const contentBytes = await fetchContent(current["hiri:content"].hash);
+            if (contentBytes) {
+              const contentHash = await crypto.hash(contentBytes);
+              if (contentHash !== current["hiri:content"].hash) {
+                return {
+                  valid: false,
+                  depth,
+                  reason: `Content hash mismatch at version ${current["hiri:version"]}`,
+                  warnings,
+                  failures: failures.length > 0 ? failures : undefined,
+                };
+              }
+              warnings.push(
+                `Delta verification failed at version ${current["hiri:version"]}: ${deltaResult.reason}; fell back to full content verification`,
+              );
+            }
+          }
+        }
+      }
     }
 
     // Move to previous manifest (continue walking, don't short-circuit)

@@ -5,14 +5,14 @@
  * and observe temporal key status transitions via the Mock Clock slider.
  *
  * Kernel functions used:
- *   generateKeypair, deriveAuthorityAsync, buildKeyDocument, signKeyDocument,
+ *   generateKeypair, deriveAuthority, buildKeyDocument, signKeyDocument,
  *   resolveSigningKey, verifyManifestWithKeyLifecycle, buildUnsignedManifest,
  *   signManifest, hashManifest, stableStringify, base58Encode, addDuration,
  *   compareTimestamps, verifyRotationProof
  */
 
 import { generateKeypair } from "../adapters/crypto/ed25519.js";
-import { deriveAuthorityAsync } from "../kernel/authority.js";
+import { deriveAuthority } from "../kernel/authority.js";
 import { buildKeyDocument, buildUnsignedManifest } from "../kernel/manifest.js";
 import { signKeyDocument, signManifest } from "../kernel/signing.js";
 import { hashManifest } from "../kernel/chain.js";
@@ -280,7 +280,7 @@ async function handleGenerate(): Promise<void> {
   try {
     // Generate keypair
     key1 = await generateKeypair("key-1");
-    authority = await deriveAuthorityAsync(key1.publicKey, key1.algorithm, crypto);
+    authority = deriveAuthority(key1.publicKey, key1.algorithm);
     keyDocUri = `hiri://${authority}/key/main`;
 
     // Store in DemoState
@@ -300,7 +300,7 @@ async function handleGenerate(): Promise<void> {
     const unsigned = buildKeyDocument({
       authority,
       authorityType: "key",
-      version: 1,
+      version: "1",
       activeKeys: [verificationKey],
       policies: {
         gracePeriodAfterRotation: GRACE_DURATION,
@@ -308,7 +308,7 @@ async function handleGenerate(): Promise<void> {
       },
     });
 
-    demoState.keyDocument = await signKeyDocument(unsigned, key1, T_KEY1_CREATED, crypto);
+    demoState.keyDocument = await signKeyDocument(unsigned, key1, T_KEY1_CREATED, "JCS", crypto);
 
     // Create test manifest signed by key-1
     const content = stableStringify({ "@id": `hiri://${authority}/data/test`, name: "Test Subject" });
@@ -317,16 +317,17 @@ async function handleGenerate(): Promise<void> {
 
     const unsignedManifest = buildUnsignedManifest({
       id: `hiri://${authority}/data/test`,
-      version: 1,
+      version: "1",
       branch: "main",
       created: T_KEY1_CREATED,
       contentHash,
       contentFormat: "application/ld+json",
       contentSize: contentBytes.length,
+      addressing: "raw-sha256",
       canonicalization: "JCS",
     });
 
-    testManifestKey1 = await signManifest(unsignedManifest, key1, T_KEY1_CREATED, crypto);
+    testManifestKey1 = await signManifest(unsignedManifest, key1, T_KEY1_CREATED, "JCS", crypto);
 
     // Test manifest is only used by the Mock Clock slider (stored in testManifestKey1).
     // It is NOT pushed to demoState.manifests, which is reserved for Tab B's person data.
@@ -409,7 +410,7 @@ async function handleRotate(): Promise<void> {
     const unsigned = buildKeyDocument({
       authority,
       authorityType: "key",
-      version: 2,
+      version: "2",
       activeKeys: [newActiveKey],
       rotatedKeys: [rotatedEntry],
       policies: {
@@ -418,7 +419,7 @@ async function handleRotate(): Promise<void> {
       },
     });
 
-    demoState.keyDocument = await signKeyDocument(unsigned, key2, T_ROTATION, crypto);
+    demoState.keyDocument = await signKeyDocument(unsigned, key2, T_ROTATION, "JCS", crypto);
 
     // Create test manifest signed by key-2
     const content = stableStringify({ "@id": `hiri://${authority}/data/test-v2`, name: "Test Subject V2" });
@@ -427,16 +428,17 @@ async function handleRotate(): Promise<void> {
 
     const unsignedManifest = buildUnsignedManifest({
       id: `hiri://${authority}/data/test`,
-      version: 2,
+      version: "2",
       branch: "main",
       created: T_ROTATION,
       contentHash,
       contentFormat: "application/ld+json",
       contentSize: contentBytes.length,
+      addressing: "raw-sha256",
       canonicalization: "JCS",
     });
 
-    testManifestKey2 = await signManifest(unsignedManifest, key2, T_ROTATION, crypto);
+    testManifestKey2 = await signManifest(unsignedManifest, key2, T_ROTATION, "JCS", crypto);
 
     phase = "rotated";
 
@@ -483,7 +485,7 @@ async function handleRevoke(): Promise<void> {
     const unsigned = buildKeyDocument({
       authority,
       authorityType: "key",
-      version: 3,
+      version: "3",
       activeKeys: [activeKey],
       revokedKeys: [revokedEntry],
       policies: {
@@ -492,7 +494,7 @@ async function handleRevoke(): Promise<void> {
       },
     });
 
-    demoState.keyDocument = await signKeyDocument(unsigned, key2, T_REVOCATION, crypto);
+    demoState.keyDocument = await signKeyDocument(unsigned, key2, T_REVOCATION, "JCS", crypto);
 
     phase = "revoked";
 

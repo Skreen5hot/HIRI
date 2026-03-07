@@ -14,6 +14,7 @@
  * reference non-deterministic APIs.
  */
 
+import { parseVersion } from "./version.js";
 import type { UnsignedManifest, ResolutionManifest, GenesisValidation } from "./types.js";
 
 /**
@@ -28,12 +29,12 @@ export function validateGenesis(
   const version = manifest["hiri:version"];
   const hasChain = "hiri:chain" in manifest && manifest["hiri:chain"] != null;
 
-  if (version === 1) {
+  if (parseVersion(version) === 1n) {
     // Genesis: version 1, chain is optional
     return { valid: true };
   }
 
-  if (version > 1 && !hasChain) {
+  if (parseVersion(version) > 1n && !hasChain) {
     return {
       valid: false,
       reason: "Non-genesis manifest (version > 1) must include hiri:chain",

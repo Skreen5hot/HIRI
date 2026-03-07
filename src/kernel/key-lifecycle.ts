@@ -52,14 +52,26 @@ export function resolveSigningKey(
   // Step 1: Extract keyId from verificationMethod
   const sig = manifest["hiri:signature"];
   if (!sig) {
-    return { valid: false, keyStatus: "unknown", keyId: "" };
+    return {
+      valid: false,
+      keyStatus: "unknown",
+      keyId: "",
+      revocationStatus: "unknown",
+      timestampVerification: "advisory-only",
+    };
   }
   const keyId = extractKeyId(sig.verificationMethod);
 
   // Step 2: Search activeKeys
   const activeKey = findKeyById(keyDocument["hiri:activeKeys"], keyId);
   if (activeKey) {
-    return { valid: true, keyStatus: "active", keyId };
+    return {
+      valid: true,
+      keyStatus: "active",
+      keyId,
+      revocationStatus: "confirmed-valid",
+      timestampVerification: "advisory-only",
+    };
   }
 
   // Step 3: Search rotatedKeys — check grace period
@@ -80,10 +92,18 @@ export function resolveSigningKey(
         keyStatus: "rotated-grace",
         keyId,
         warning: "Signed by rotated key within grace period",
+        revocationStatus: "confirmed-valid",
+        timestampVerification: "advisory-only",
       };
     }
 
-    return { valid: false, keyStatus: "rotated-expired", keyId };
+    return {
+      valid: false,
+      keyStatus: "rotated-expired",
+      keyId,
+      revocationStatus: "confirmed-valid",
+      timestampVerification: "advisory-only",
+    };
   }
 
   // Step 4: Search revokedKeys — check retroactive invalidation
@@ -98,15 +118,29 @@ export function resolveSigningKey(
         keyStatus: "revoked",
         keyId,
         warning: "Key subsequently revoked but signature predates invalidation point",
+        revocationStatus: "confirmed-revoked",
+        timestampVerification: "advisory-only",
       };
     }
 
     // Signed after invalidation point — retroactively invalid
-    return { valid: false, keyStatus: "revoked", keyId };
+    return {
+      valid: false,
+      keyStatus: "revoked",
+      keyId,
+      revocationStatus: "confirmed-revoked",
+      timestampVerification: "advisory-only",
+    };
   }
 
   // Step 5: Key not found in any list
-  return { valid: false, keyStatus: "unknown", keyId };
+  return {
+      valid: false,
+      keyStatus: "unknown",
+      keyId,
+      revocationStatus: "unknown",
+      timestampVerification: "advisory-only",
+    };
 }
 
 /**
@@ -144,17 +178,22 @@ export async function verifyManifestWithKeyLifecycle(
       keyStatus: keyResult.keyStatus,
       keyId: keyResult.keyId,
       warning: `Public key material not found for ${keyResult.keyId}`,
+      revocationStatus: keyResult.revocationStatus,
+      timestampVerification: keyResult.timestampVerification,
     };
   }
 
   // Step 3: Cryptographic signature verification
-  const sigValid = await verifyManifest(manifest, publicKeyBytes, crypto);
+  const profile = manifest["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
+  const sigValid = await verifyManifest(manifest, publicKeyBytes, profile, crypto);
   if (!sigValid) {
     return {
       valid: false,
       keyStatus: keyResult.keyStatus,
       keyId: keyResult.keyId,
       warning: "Signature cryptographically invalid",
+      revocationStatus: keyResult.revocationStatus,
+      timestampVerification: keyResult.timestampVerification,
     };
   }
 

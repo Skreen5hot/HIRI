@@ -8,7 +8,7 @@
 
 // Identity
 export { generateKeypair } from "../adapters/crypto/ed25519.js";
-export { deriveAuthorityAsync } from "../kernel/authority.js";
+export { deriveAuthority, extractPublicKey } from "../kernel/authority.js";
 export {
   buildKeyDocument,
   buildUnsignedManifest,
@@ -28,7 +28,7 @@ export {
   verifyChain,
   verifyChainWithKeyLifecycle,
 } from "../kernel/chain.js";
-export { buildDelta, verifyDelta } from "../kernel/delta.js";
+export { buildDelta, buildRDFDelta, verifyDelta } from "../kernel/delta.js";
 export { applyPatch } from "../kernel/json-patch.js";
 export { validateGenesis } from "../kernel/genesis.js";
 
@@ -59,6 +59,7 @@ export {
 
 // Utilities
 export { stableStringify } from "../kernel/canonicalize.js";
+export { JCSCanonicalizer } from "../kernel/jcs-canonicalizer.js";
 export { HiriURI } from "../kernel/hiri-uri.js";
 export { HashRegistry } from "../kernel/hash-registry.js";
 export { defaultCryptoProvider } from "../adapters/crypto/provider.js";
@@ -88,7 +89,11 @@ export type {
   RevokedKey,
   KeyPolicies,
   JsonPatchOperation,
+  RDFPatchOperation,
   EntailmentMode,
+  Canonicalizer,
+  DocumentLoader,
+  ManifestDelta,
 } from "../kernel/types.js";
 
 export type {

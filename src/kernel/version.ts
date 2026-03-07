@@ -1,41 +1,27 @@
 /**
- * Version Parsing and Encoding
+ * Version Parsing and Encoding (v3.1.1)
  *
- * Pure functions for handling HIRI version numbers with BigInt support.
- * Versions are always positive integers (>= 1).
+ * Pure functions for handling HIRI version strings with BigInt support.
+ * Versions are always positive integers (>= 1), encoded as strings.
  *
- * The hiri:version field in manifests is typed as `number` for now.
- * These functions provide a migration path for versions > MAX_SAFE_INTEGER
- * via string encoding.
+ * v3.1.1: hiri:version is ALWAYS a JSON string. Number input is rejected.
  *
  * This module is part of the kernel and MUST NOT perform I/O or
  * reference non-deterministic APIs.
  */
 
 /**
- * Parse a version value (number or string) into a BigInt.
+ * Parse a version string into a BigInt.
  *
- * @param version - A positive integer as number or string
+ * @param version - A positive integer as string (e.g., "1", "42")
  * @returns The version as a BigInt
- * @throws If the version is < 1, non-integer, or exceeds MAX_SAFE_INTEGER for number type
+ * @throws If input is not a string, < 1, or not a valid integer
  */
-export function parseVersion(version: number | string): bigint {
-  if (typeof version === "number") {
-    if (!Number.isInteger(version)) {
-      throw new Error(`Version must be an integer, got: ${version}`);
-    }
-    if (version > Number.MAX_SAFE_INTEGER) {
-      throw new Error(
-        `Version exceeds MAX_SAFE_INTEGER (${Number.MAX_SAFE_INTEGER}), use string encoding`,
-      );
-    }
-    if (version < 1) {
-      throw new Error(`Version must be >= 1, got: ${version}`);
-    }
-    return BigInt(version);
+export function parseVersion(version: string): bigint {
+  if (typeof version !== "string") {
+    throw new Error("Version must be a string");
   }
 
-  // String input
   let parsed: bigint;
   try {
     parsed = BigInt(version);
@@ -51,18 +37,12 @@ export function parseVersion(version: number | string): bigint {
 }
 
 /**
- * Encode a BigInt version back to number or string.
- *
- * Returns a number if the value fits safely in a JavaScript number,
- * otherwise returns a string.
+ * Encode a BigInt version to a string.
  *
  * @param version - The version as a BigInt
- * @returns number if safe, string if large
+ * @returns The version as a string (always)
  */
-export function encodeVersion(version: bigint): number | string {
-  if (version <= BigInt(Number.MAX_SAFE_INTEGER)) {
-    return Number(version);
-  }
+export function encodeVersion(version: bigint): string {
   return version.toString();
 }
 
@@ -75,47 +55,31 @@ export function encodeVersion(version: bigint): number | string {
 export function validateVersion(
   version: unknown,
 ): { valid: boolean; reason?: string } {
-  if (typeof version === "number") {
-    if (!Number.isInteger(version)) {
-      return { valid: false, reason: `Version must be an integer, got: ${version}` };
-    }
-    if (version > Number.MAX_SAFE_INTEGER) {
-      return {
-        valid: false,
-        reason: `Version exceeds MAX_SAFE_INTEGER, use string encoding`,
-      };
-    }
-    if (version < 1) {
+  if (typeof version !== "string") {
+    return { valid: false, reason: `Version must be a string, got: ${typeof version}` };
+  }
+
+  try {
+    const parsed = BigInt(version);
+    if (parsed < 1n) {
       return { valid: false, reason: `Version must be >= 1, got: ${version}` };
     }
     return { valid: true };
+  } catch {
+    return { valid: false, reason: `Invalid version string: "${version}"` };
   }
-
-  if (typeof version === "string") {
-    try {
-      const parsed = BigInt(version);
-      if (parsed < 1n) {
-        return { valid: false, reason: `Version must be >= 1, got: ${version}` };
-      }
-      return { valid: true };
-    } catch {
-      return { valid: false, reason: `Invalid version string: "${version}"` };
-    }
-  }
-
-  return { valid: false, reason: `Version must be a number or string, got: ${typeof version}` };
 }
 
 /**
  * Check if current version is monotonically increasing from previous.
  *
- * @param current - The current version (number or string)
- * @param previous - The previous version (number or string)
+ * @param current - The current version (string)
+ * @param previous - The previous version (string)
  * @returns true if current > previous
  */
 export function isMonotonicallyIncreasing(
-  current: number | string,
-  previous: number | string,
+  current: string,
+  previous: string,
 ): boolean {
   return parseVersion(current) > parseVersion(previous);
 }

@@ -1,20 +1,24 @@
 /**
- * Manifest Signing and Verification
+ * Manifest Signing and Verification (v3.1.1)
  *
  * Signs and verifies ResolutionManifests and KeyDocuments using
  * injected CryptoProvider. The signing target is the manifest
- * WITHOUT the hiri:signature field, serialized via JCS (stableStringify).
+ * WITHOUT the hiri:signature field, serialized via the declared profile.
  *
- * Sign:   manifest_bytes = canonicalize(manifest - signature) → sign(bytes, key) → signature
- * Verify: manifest_bytes = canonicalize(manifest - signature) → verify(bytes, sig, pubKey) → boolean
+ * v3.1.1 changes:
+ * - profile parameter ("JCS" | "URDNA2015") added to sign functions
+ * - Profile Symmetry Rule: signature.canonicalization must match content.canonicalization
+ * - canonicalization field added to HiriSignature
  *
  * This module is part of the kernel and MUST NOT perform I/O or
  * reference non-deterministic APIs.
  */
 
-import { stableStringify } from "./canonicalize.js";
 import { encode as base58Encode, decode as base58Decode } from "./base58.js";
+import { JCSCanonicalizer } from "./jcs-canonicalizer.js";
 import type {
+  Canonicalizer,
+  DocumentLoader,
   CryptoProvider,
   SigningKey,
   HiriSignature,
@@ -27,19 +31,27 @@ import type {
 /**
  * Sign a ResolutionManifest.
  *
- * @param unsigned - The manifest without a signature
- * @param key - The signing key
- * @param timestamp - ISO 8601 timestamp (per ADR-003: caller provides)
- * @param crypto - Injected crypto provider
- * @returns The manifest with hiri:signature attached
+ * Enforces Profile Symmetry Rule: the declared profile must match
+ * the content canonicalization field.
  */
 export async function signManifest(
   unsigned: UnsignedManifest,
   key: SigningKey,
   timestamp: string,
+  profile: "JCS" | "URDNA2015",
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<ResolutionManifest> {
-  const signature = await createSignature(unsigned, key, timestamp, "assertionMethod", crypto);
+  // Profile Symmetry Rule: content.canonicalization must match signing profile
+  if (unsigned["hiri:content"].canonicalization !== profile) {
+    throw new Error(
+      `Profile symmetry violation: content declares "${unsigned["hiri:content"].canonicalization}" but signing with "${profile}"`
+    );
+  }
+  const canon = resolveCanonicalizer(profile, canonicalizer);
+  const loader = documentLoader ?? defaultDocumentLoader;
+  const signature = await createSignature(unsigned, key, timestamp, "assertionMethod", profile, crypto, canon, loader);
   return {
     ...unsigned,
     "hiri:signature": signature,
@@ -48,20 +60,19 @@ export async function signManifest(
 
 /**
  * Sign a KeyDocument.
- *
- * @param unsigned - The KeyDocument without a signature
- * @param key - The signing key
- * @param timestamp - ISO 8601 timestamp (per ADR-003: caller provides)
- * @param crypto - Injected crypto provider
- * @returns The KeyDocument with hiri:signature attached
  */
 export async function signKeyDocument(
   unsigned: UnsignedKeyDocument,
   key: SigningKey,
   timestamp: string,
+  profile: "JCS" | "URDNA2015",
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<KeyDocument> {
-  const signature = await createSignature(unsigned, key, timestamp, "assertionMethod", crypto);
+  const canon = resolveCanonicalizer(profile, canonicalizer);
+  const loader = documentLoader ?? defaultDocumentLoader;
+  const signature = await createSignature(unsigned, key, timestamp, "assertionMethod", profile, crypto, canon, loader);
   return {
     ...unsigned,
     "hiri:signature": signature,
@@ -71,25 +82,39 @@ export async function signKeyDocument(
 /**
  * Verify a signed manifest's signature against a public key.
  *
- * @param manifest - The signed manifest
- * @param publicKey - The public key bytes
- * @param crypto - Injected crypto provider
- * @returns true if the signature is valid
+ * Checks Profile Symmetry Rule before cryptographic verification:
+ * signature.canonicalization must match content.canonicalization.
+ *
+ * The profile parameter is discovered from the manifest itself by the caller
+ * (typically manifest["hiri:signature"].canonicalization).
  */
 export async function verifyManifest(
   manifest: ResolutionManifest,
   publicKey: Uint8Array,
+  profile: "JCS" | "URDNA2015",
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<boolean> {
   const signature = manifest["hiri:signature"];
   if (!signature) return false;
 
+  // Profile Symmetry check
+  if (signature.canonicalization !== manifest["hiri:content"].canonicalization) {
+    return false;
+  }
+  if (signature.canonicalization !== profile) {
+    return false;
+  }
+
+  const canon = resolveCanonicalizer(profile, canonicalizer);
+
   // Reconstruct the unsigned manifest (remove hiri:signature)
   const unsigned = stripSignature(manifest);
 
-  // Canonicalize and encode to bytes
-  const canonical = stableStringify(unsigned, false);
-  const bytes = new TextEncoder().encode(canonical);
+  // Canonicalize to bytes
+  const loader = documentLoader ?? defaultDocumentLoader;
+  const bytes = await canon.canonicalize(unsigned, loader);
 
   // Decode the base58 signature (strip 'z' multibase prefix)
   const proofValue = signature.proofValue;
@@ -104,14 +129,22 @@ export async function verifyManifest(
 export async function verifyKeyDocument(
   doc: KeyDocument,
   publicKey: Uint8Array,
+  profile: "JCS" | "URDNA2015",
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<boolean> {
   const signature = doc["hiri:signature"];
   if (!signature) return false;
 
+  if (signature.canonicalization !== profile) {
+    return false;
+  }
+
+  const canon = resolveCanonicalizer(profile, canonicalizer);
   const unsigned = stripSignature(doc);
-  const canonical = stableStringify(unsigned, false);
-  const bytes = new TextEncoder().encode(canonical);
+  const loader = documentLoader ?? defaultDocumentLoader;
+  const bytes = await canon.canonicalize(unsigned, loader);
   const sigBytes = base58Decode(
     signature.proofValue.startsWith("z")
       ? signature.proofValue.substring(1)
@@ -133,11 +166,13 @@ async function createSignature(
   key: SigningKey,
   timestamp: string,
   proofPurpose: string,
+  profile: "JCS" | "URDNA2015",
   crypto: CryptoProvider,
+  canonicalizer: Canonicalizer,
+  documentLoader: DocumentLoader,
 ): Promise<HiriSignature> {
-  // Serialize the document (without signature) to canonical bytes
-  const canonical = stableStringify(document, false);
-  const bytes = new TextEncoder().encode(canonical);
+  // Canonicalize document to bytes using the injected canonicalizer
+  const bytes = await canonicalizer.canonicalize(document, documentLoader);
 
   // Sign
   const sigBytes = await crypto.sign(bytes, key.privateKey);
@@ -146,14 +181,13 @@ async function createSignature(
   const proofValue = "z" + base58Encode(sigBytes);
 
   // Build the verification method URI
-  // Pattern: hiri://<authority>/key/main#<keyId>
-  // The authority is embedded in the document's @id
   const docId = document["@id"] as string;
   const authority = extractAuthority(docId);
   const verificationMethod = `hiri://${authority}/key/main#${key.keyId}`;
 
   return {
     type: "Ed25519Signature2020",
+    canonicalization: profile,
     created: timestamp,
     verificationMethod,
     proofPurpose,
@@ -163,12 +197,30 @@ async function createSignature(
 
 /**
  * Extract the authority from a HIRI URI string.
- * e.g., "hiri://key:ed25519:abc123/data/person-001" → "key:ed25519:abc123"
  */
 function extractAuthority(uri: string): string {
   const withoutScheme = uri.replace("hiri://", "");
   const firstSlash = withoutScheme.indexOf("/");
   return firstSlash === -1 ? withoutScheme : withoutScheme.substring(0, firstSlash);
+}
+
+/** Default document loader (throws — JCS ignores it, URDNA2015 must provide its own). */
+const defaultDocumentLoader: DocumentLoader = async (url) => {
+  throw new Error("No document loader configured. URDNA2015 requires an explicit documentLoader. URL: " + url);
+};
+
+/**
+ * Resolve canonicalizer: use provided, default to JCS, or throw if URDNA2015 without one.
+ */
+function resolveCanonicalizer(
+  profile: "JCS" | "URDNA2015",
+  canonicalizer?: Canonicalizer,
+): Canonicalizer {
+  if (canonicalizer) return canonicalizer;
+  if (profile === "URDNA2015") {
+    throw new Error("URDNA2015 profile requires an explicit Canonicalizer instance");
+  }
+  return new JCSCanonicalizer();
 }
 
 /**

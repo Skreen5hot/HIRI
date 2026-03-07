@@ -22,11 +22,13 @@
  */
 
 import { HiriURI } from "./hiri-uri.js";
-import { deriveAuthorityAsync } from "./authority.js";
+import { deriveAuthority } from "./authority.js";
 import { verifyManifest } from "./signing.js";
 import { verifyChain, verifyChainWithKeyLifecycle } from "./chain.js";
 import { verifyManifestWithKeyLifecycle } from "./key-lifecycle.js";
 import type {
+  Canonicalizer,
+  DocumentLoader,
   CryptoProvider,
   StorageAdapter,
   ResolutionManifest,
@@ -46,6 +48,8 @@ export interface ResolveOptions {
   manifestHash: string;
   keyDocument?: KeyDocument;     // Enables lifecycle-aware verification (M5)
   verificationTime?: string;     // Injected mock clock for grace period checks (M5)
+  canonicalizer?: Canonicalizer; // Injected canonicalizer for URDNA2015 (M7)
+  documentLoader?: DocumentLoader; // Injected document loader for URDNA2015 (M7)
 }
 
 export interface VerifiedContent {
@@ -99,12 +103,8 @@ export async function resolve(
     throw new ResolutionError("PARSE_ERROR", `Malformed URI: ${uri}`);
   }
 
-  // Step 2: Verify authority matches public key
-  const derivedAuthority = await deriveAuthorityAsync(
-    publicKey,
-    "ed25519",
-    crypto,
-  );
+  // Step 2: Verify authority matches public key (v3.1.1: sync, no hashing)
+  const derivedAuthority = deriveAuthority(publicKey, "ed25519");
   if (derivedAuthority !== parsed.authority) {
     throw new ResolutionError(
       "AUTHORITY_NOT_FOUND",
@@ -177,7 +177,8 @@ export async function resolve(
     }
   } else {
     // M1–M4 path: bare public key verification
-    const sigValid = await verifyManifest(manifest, publicKey, crypto);
+    const profile = manifest["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
+    const sigValid = await verifyManifest(manifest, publicKey, profile, crypto, options.canonicalizer, options.documentLoader);
     if (!sigValid) {
       throw new ResolutionError(
         "SIGNATURE_VERIFICATION_FAILED",
@@ -200,6 +201,8 @@ export async function resolve(
         fetchManifestFn,
         fetchContentFn,
         crypto,
+        options.canonicalizer,
+        options.documentLoader,
       );
 
       if (chainResult.warnings.length > 0) {
@@ -220,6 +223,8 @@ export async function resolve(
         fetchManifestFn,
         fetchContentFn,
         crypto,
+        options.canonicalizer,
+        options.documentLoader,
       );
 
       if (!chainResult.valid) {

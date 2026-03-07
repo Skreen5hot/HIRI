@@ -19,7 +19,7 @@ import { hashManifest } from "../src/kernel/chain.js";
 import { resolve } from "../src/kernel/resolve.js";
 import type { VerifiedContent } from "../src/kernel/resolve.js";
 import { stableStringify } from "../src/kernel/canonicalize.js";
-import { deriveAuthorityAsync } from "../src/kernel/authority.js";
+import { deriveAuthority } from "../src/kernel/authority.js";
 import { buildUnsignedManifest, buildKeyDocument, prepareContent } from "../src/kernel/manifest.js";
 import { signManifest, signKeyDocument } from "../src/kernel/signing.js";
 import { encode as base58Encode } from "../src/kernel/base58.js";
@@ -65,7 +65,7 @@ const keyB = await generateKeypair("key-2");
 const keyC = await generateKeypair("key-3");
 
 // Authority derived from Key A (genesis key) — persists through all rotations
-const authority = await deriveAuthorityAsync(keyA.publicKey, "ed25519", crypto);
+const authority = deriveAuthority(keyA.publicKey, "ed25519");
 
 // Multibase-encode public keys (z prefix + base58)
 const keyAMultibase = "z" + base58Encode(keyA.publicKey);
@@ -81,7 +81,7 @@ const keyDocUri = `hiri://${authority}/key/main`;
 const unsignedKeyDoc = buildKeyDocument({
   authority,
   authorityType: "key",
-  version: 3,
+  version: "3",
   activeKeys: [
     {
       "@id": `${keyDocUri}#key-3`,
@@ -120,7 +120,7 @@ const unsignedKeyDoc = buildKeyDocument({
 });
 
 // Sign KeyDocument with current active key (Key C)
-const keyDoc: KeyDocument = await signKeyDocument(unsignedKeyDoc, keyC, "2025-07-01T00:00:00Z", crypto);
+const keyDoc: KeyDocument = await signKeyDocument(unsignedKeyDoc, keyC, "2025-07-01T00:00:00Z", "JCS", crypto);
 
 // =========================================================================
 // Build Rotation Proof for Test 5.11
@@ -141,7 +141,7 @@ const newKeySig = await crypto.sign(claimBytes, keyC.privateKey);
 const unsignedKeyDocWithProof = buildKeyDocument({
   authority,
   authorityType: "key",
-  version: 3,
+  version: "3",
   activeKeys: unsignedKeyDoc["hiri:activeKeys"],
   rotatedKeys: [
     {
@@ -168,7 +168,7 @@ const unsignedKeyDocWithProof = buildKeyDocument({
   revokedKeys: unsignedKeyDoc["hiri:revokedKeys"],
   policies: unsignedKeyDoc["hiri:policies"],
 });
-const keyDocWithProof: KeyDocument = await signKeyDocument(unsignedKeyDocWithProof, keyC, "2025-07-01T00:00:00Z", crypto);
+const keyDocWithProof: KeyDocument = await signKeyDocument(unsignedKeyDocWithProof, keyC, "2025-07-01T00:00:00Z", "JCS", crypto);
 
 // =========================================================================
 // Build Timeline Manifests (M-V1 through M-V5)
@@ -187,7 +187,7 @@ const contentHash = await crypto.hash(contentBytes);
  * Build and sign a standalone manifest (no chain) at a given version.
  */
 async function buildManifest(
-  version: number,
+  version: string,
   signingKey: typeof keyA,
   timestamp: string,
 ): Promise<ResolutionManifest> {
@@ -200,45 +200,47 @@ async function buildManifest(
     contentFormat: "application/ld+json",
     contentSize: contentBytes.length,
     canonicalization: "JCS",
+    addressing: "raw-sha256",
   });
-  return signManifest(unsigned, signingKey, timestamp, crypto);
+  return signManifest(unsigned, signingKey, timestamp, "JCS", crypto);
 }
 
 // M-V1: Signed by Key A at 2025-01-15 (before invalidation point 2025-02-15)
-const mV1 = await buildManifest(1, keyA, "2025-01-15T00:00:00Z");
+const mV1 = await buildManifest("1", keyA, "2025-01-15T00:00:00Z");
 
 // M-V2: Signed by Key A at 2025-02-20 (after invalidation point, before revocation)
-const mV2 = await buildManifest(2, keyA, "2025-02-20T00:00:00Z");
+const mV2 = await buildManifest("2", keyA, "2025-02-20T00:00:00Z");
 
 // M-V3: Signed by Key B at 2025-05-01 (Key B active)
-const mV3 = await buildManifest(3, keyB, "2025-05-01T00:00:00Z");
+const mV3 = await buildManifest("3", keyB, "2025-05-01T00:00:00Z");
 
 // M-V4: Signed by Key B at 2025-08-01 (Key B rotated, within grace)
-const mV4 = await buildManifest(4, keyB, "2025-08-01T00:00:00Z");
+const mV4 = await buildManifest("4", keyB, "2025-08-01T00:00:00Z");
 
 // M-V5: Signed by Key C at 2025-08-01 (Key C active)
-const mV5 = await buildManifest(5, keyC, "2025-08-01T00:00:00Z");
+const mV5 = await buildManifest("5", keyC, "2025-08-01T00:00:00Z");
 
 // Test 5.4 needs a manifest signed by Key A AFTER revocation
-const mV4Revoked = await buildManifest(4, keyA, "2025-04-01T00:00:00Z");
+const mV4Revoked = await buildManifest("4", keyA, "2025-04-01T00:00:00Z");
 
 // =========================================================================
 // Build Chained Manifests for Tests 5.9, 5.10, 5.13
 // =========================================================================
 
 // Chain for 5.9: V3 (Key B) → V5 (Key C) — 2-manifest chain
-const mV3Genesis = await buildManifest(1, keyB, "2025-05-01T00:00:00Z");
+const mV3Genesis = await buildManifest("1", keyB, "2025-05-01T00:00:00Z");
 const mV3GenesisHash = await hashManifest(mV3Genesis, crypto);
 
 const mV5ChainedUnsigned = buildUnsignedManifest({
   id: resourceUri,
-  version: 2,
+  version: "2",
   branch: "main",
   created: "2025-08-01T00:00:00Z",
   contentHash,
   contentFormat: "application/ld+json",
   contentSize: contentBytes.length,
   canonicalization: "JCS",
+  addressing: "raw-sha256",
   chain: {
     previous: mV3GenesisHash,
     previousBranch: "main",
@@ -246,21 +248,22 @@ const mV5ChainedUnsigned = buildUnsignedManifest({
     depth: 2,
   },
 });
-const mV5Chained = await signManifest(mV5ChainedUnsigned, keyC, "2025-08-01T00:00:00Z", crypto);
+const mV5Chained = await signManifest(mV5ChainedUnsigned, keyC, "2025-08-01T00:00:00Z", "JCS", crypto);
 
 // Chain for 5.10: V1 (Key A) → V2 (Key A) → V3 (Key B) — 3-manifest chain
-const mChainV1 = await buildManifest(1, keyA, "2025-01-15T00:00:00Z");
+const mChainV1 = await buildManifest("1", keyA, "2025-01-15T00:00:00Z");
 const mChainV1Hash = await hashManifest(mChainV1, crypto);
 
 const mChainV2Unsigned = buildUnsignedManifest({
   id: resourceUri,
-  version: 2,
+  version: "2",
   branch: "main",
   created: "2025-02-20T00:00:00Z",
   contentHash,
   contentFormat: "application/ld+json",
   contentSize: contentBytes.length,
   canonicalization: "JCS",
+  addressing: "raw-sha256",
   chain: {
     previous: mChainV1Hash,
     previousBranch: "main",
@@ -268,18 +271,19 @@ const mChainV2Unsigned = buildUnsignedManifest({
     depth: 2,
   },
 });
-const mChainV2 = await signManifest(mChainV2Unsigned, keyA, "2025-02-20T00:00:00Z", crypto);
+const mChainV2 = await signManifest(mChainV2Unsigned, keyA, "2025-02-20T00:00:00Z", "JCS", crypto);
 const mChainV2Hash = await hashManifest(mChainV2, crypto);
 
 const mChainV3Unsigned = buildUnsignedManifest({
   id: resourceUri,
-  version: 3,
+  version: "3",
   branch: "main",
   created: "2025-05-01T00:00:00Z",
   contentHash,
   contentFormat: "application/ld+json",
   contentSize: contentBytes.length,
   canonicalization: "JCS",
+  addressing: "raw-sha256",
   chain: {
     previous: mChainV2Hash,
     previousBranch: "main",
@@ -287,7 +291,7 @@ const mChainV3Unsigned = buildUnsignedManifest({
     depth: 3,
   },
 });
-const mChainV3 = await signManifest(mChainV3Unsigned, keyB, "2025-05-01T00:00:00Z", crypto);
+const mChainV3 = await signManifest(mChainV3Unsigned, keyB, "2025-05-01T00:00:00Z", "JCS", crypto);
 
 // =========================================================================
 // Milestone 5 Tests
@@ -438,7 +442,7 @@ try {
   ok(result.failures!.length >= 1, "Should have at least 1 failure");
 
   // V2 should be the failure point
-  const v2Failure = result.failures!.find(f => f.version === 2);
+  const v2Failure = result.failures!.find(f => f.version === "2");
   ok(v2Failure !== undefined, "V2 should be the failure point");
   strictEqual(v2Failure!.keyStatus, "revoked");
   strictEqual(v2Failure!.keyId, "key-1");
@@ -460,17 +464,18 @@ try {
   // Create a manifest that claims to be signed by key-99
   const fakeUnsigned = buildUnsignedManifest({
     id: resourceUri,
-    version: 99,
+    version: "99",
     branch: "main",
     created: "2025-09-01T00:00:00Z",
     contentHash,
     contentFormat: "application/ld+json",
     contentSize: contentBytes.length,
     canonicalization: "JCS",
+    addressing: "raw-sha256",
   });
   // Sign with Key A but manually set keyId to "key-99"
   const fakeKey = { ...keyA, keyId: "key-99" };
-  const fakeManifest = await signManifest(fakeUnsigned, fakeKey, "2025-09-01T00:00:00Z", crypto);
+  const fakeManifest = await signManifest(fakeUnsigned, fakeKey, "2025-09-01T00:00:00Z", "JCS", crypto);
 
   const result = resolveSigningKey(fakeManifest, keyDoc, "2025-09-01T00:00:00Z");
   strictEqual(result.valid, false);

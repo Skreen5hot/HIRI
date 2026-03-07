@@ -37,3 +37,4 @@ export const defaultCryptoProvider: CryptoProvider = {
 /** Re-export for convenience. */
 export { SHA256Algorithm } from "./sha256.js";
 export { generateKeypair } from "./ed25519.js";
+export { CIDv1Algorithm } from "../content-addressing/cidv1-algorithm.js";

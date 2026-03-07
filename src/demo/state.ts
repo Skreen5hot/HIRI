@@ -18,7 +18,7 @@ export interface ManifestEntry {
   manifestHash: string;
   contentBytes: Uint8Array;
   contentHash: string;
-  version: number;
+  version: string;
 }
 
 export interface KeypairEntry {

@@ -17,7 +17,7 @@ import { parseVersion, encodeVersion, isMonotonicallyIncreasing, validateVersion
 import { resolve, ResolutionError } from "../src/kernel/resolve.js";
 import type { ResolveOptions, VerifiedContent } from "../src/kernel/resolve.js";
 import { stableStringify } from "../src/kernel/canonicalize.js";
-import { deriveAuthorityAsync } from "../src/kernel/authority.js";
+import { deriveAuthority } from "../src/kernel/authority.js";
 import { buildUnsignedManifest, prepareContent } from "../src/kernel/manifest.js";
 import { signManifest } from "../src/kernel/signing.js";
 import { hashManifest } from "../src/kernel/chain.js";
@@ -54,7 +54,7 @@ console.log("--- Version Handling ---");
 
 // version: parseVersion safe integer
 try {
-  const result = parseVersion(42);
+  const result = parseVersion("42");
   strictEqual(result, 42n);
   pass("version: parseVersion safe integer");
 } catch (e) { fail("version: parseVersion safe integer", e); }
@@ -72,17 +72,17 @@ try {
 
   // 0
   threw = false;
-  try { parseVersion(0); } catch { threw = true; }
+  try { parseVersion("0"); } catch { threw = true; }
   ok(threw, "Should reject 0");
 
   // negative
   threw = false;
-  try { parseVersion(-1); } catch { threw = true; }
+  try { parseVersion("-1"); } catch { threw = true; }
   ok(threw, "Should reject negative");
 
   // non-integer
   threw = false;
-  try { parseVersion(1.5); } catch { threw = true; }
+  try { parseVersion("1.5"); } catch { threw = true; }
   ok(threw, "Should reject non-integer");
 
   // validateVersion for non-number/string
@@ -94,8 +94,8 @@ try {
 
 // version: encodeVersion
 try {
-  strictEqual(encodeVersion(42n), 42);
-  strictEqual(typeof encodeVersion(42n), "number");
+  strictEqual(encodeVersion(42n), "42");
+  strictEqual(typeof encodeVersion(42n), "string");
 
   const large = 9007199254740993n;
   strictEqual(encodeVersion(large), "9007199254740993");
@@ -106,9 +106,9 @@ try {
 
 // version: isMonotonicallyIncreasing
 try {
-  strictEqual(isMonotonicallyIncreasing(2, 1), true);
-  strictEqual(isMonotonicallyIncreasing(1, 2), false);
-  strictEqual(isMonotonicallyIncreasing(1, 1), false);
+  strictEqual(isMonotonicallyIncreasing("2", "1"), true);
+  strictEqual(isMonotonicallyIncreasing("1", "2"), false);
+  strictEqual(isMonotonicallyIncreasing("1", "1"), false);
   strictEqual(isMonotonicallyIncreasing("9007199254740993", "9007199254740992"), true);
 
   pass("version: isMonotonicallyIncreasing");
@@ -208,7 +208,7 @@ let resolveResult31: VerifiedContent = undefined as unknown as VerifiedContent;
 try {
   // Generate keypair and derive authority
   testKeypair = await generateKeypair("key-1");
-  testAuthority = await deriveAuthorityAsync(testKeypair.publicKey, "ed25519", crypto);
+  testAuthority = deriveAuthority(testKeypair.publicKey, "ed25519");
   testUri = `hiri://${testAuthority}/data/person-001`;
 
   // Load and prepare person.jsonld
@@ -221,15 +221,16 @@ try {
   // Build genesis manifest
   const unsigned = buildUnsignedManifest({
     id: testUri,
-    version: 1,
+    version: "1",
     branch: "main",
     created: "2025-01-15T14:30:00Z",
     contentHash: testContentHash,
+    addressing: "raw-sha256",
     contentFormat: "application/ld+json",
     contentSize: testContentBytes.length,
     canonicalization: "JCS",
   });
-  const signed = await signManifest(unsigned, testKeypair, "2025-01-15T14:30:00Z", crypto);
+  const signed = await signManifest(unsigned, testKeypair, "2025-01-15T14:30:00Z", "JCS", crypto);
 
   // Serialize manifest to bytes
   const manifestCanonical = stableStringify(signed, false);
@@ -263,7 +264,7 @@ try {
   strictEqual(resolveResult31.contentHash, testContentHash);
   strictEqual(resolveResult31.authority, testAuthority);
   strictEqual(resolveResult31.manifest["@id"], testUri);
-  strictEqual(resolveResult31.manifest["hiri:version"], 1);
+  strictEqual(resolveResult31.manifest["hiri:version"], "1");
 
   pass("3.1: Resolve valid URI against MemoryAdapter");
 } catch (e) { fail("3.1: Resolve valid URI against MemoryAdapter", e); }
@@ -459,15 +460,16 @@ try {
 
     const unsigned = buildUnsignedManifest({
       id: resourceUri,
-      version: 1,
+      version: "1",
       branch: "main",
       created: "2025-01-15T14:30:00Z",
       contentHash,
       contentFormat: "application/ld+json",
       contentSize: contentBytes.length,
       canonicalization: "JCS",
+    addressing: "raw-sha256",
     });
-    const signed = await signManifest(unsigned, testKeypair, "2025-01-15T14:30:00Z", crypto);
+    const signed = await signManifest(unsigned, testKeypair, "2025-01-15T14:30:00Z", "JCS", crypto);
     const manifestCanonical = stableStringify(signed, false);
     const manifestBytes = new TextEncoder().encode(manifestCanonical);
     const manifestHash = await crypto.hash(manifestBytes);
