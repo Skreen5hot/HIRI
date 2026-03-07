@@ -125,6 +125,23 @@
 
 ---
 
+## ADR-011: RDF Patch Design and canonicalizeNQuads Interface Extension
+
+**Date:** 2026-03-06
+
+**Decision:** Extend the `Canonicalizer` interface with an optional `canonicalizeNQuads` method for re-canonicalization of patched N-Quads. RDF Patch operations are pure kernel functions in `src/kernel/rdf-patch.ts`. The `verifyDelta` function dispatches by format: JCS uses JSON Patch, URDNA2015 uses RDF Patch with post-patch re-canonicalization.
+
+**Context:** The spec requires RDF Patch format for URDNA2015-profile deltas. After applying add/remove operations to a quad set, the result must be re-canonicalized via URDNA2015. The `appliesTo` hash check in `verifyDelta` is format-aware: JCS hashes raw bytes, URDNA2015 canonicalizes first then hashes the canonical form.
+
+**Consequences:**
+- `Canonicalizer.canonicalizeNQuads?()` is optional (JCSCanonicalizer does not implement it)
+- RDF Patch operations (`parseNQuads`, `serializeNQuads`, `applyRDFPatch`) are pure kernel functions
+- Remove-of-nonexistent is a no-op (RDF set semantics); atomicity enforced at pipeline level
+- `verifyDelta` `appliesTo` check is profile-aware: deferred to post-canonicalization for URDNA2015
+- Chain walker threads `canonicalizer` and `documentLoader` to `verifyDelta`
+
+---
+
 <!--
   Add new decisions below. Use the format:
 

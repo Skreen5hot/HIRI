@@ -62,6 +62,27 @@ export class URDNA2015Canonicalizer implements Canonicalizer {
 
     return bytes;
   }
+
+  async canonicalizeNQuads(nquads: string, _documentLoader: DocumentLoader): Promise<Uint8Array> {
+    const result = await withTimeout(
+      jsonld.canonize(nquads as any, {
+        inputFormat: "application/n-quads",
+        algorithm: "URDNA2015",
+        format: "application/n-quads",
+      }),
+      this.limits.maxWallClockMs,
+    );
+
+    const bytes = new TextEncoder().encode(result as string);
+
+    if (bytes.byteLength > this.limits.maxOutputBytes) {
+      throw new CanonicalizationResourceExceeded(
+        `Output size (${bytes.byteLength} bytes) exceeds limit (${this.limits.maxOutputBytes})`
+      );
+    }
+
+    return bytes;
+  }
 }
 
 /**

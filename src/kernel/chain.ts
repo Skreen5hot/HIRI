@@ -244,7 +244,7 @@ export async function verifyChain(
         if (deltaOpsBytes) {
           const deltaOps = JSON.parse(
             new TextDecoder().decode(deltaOpsBytes),
-          ) as JsonPatchOperation[];
+          );
 
           const profile2 = current["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
           const deltaResult = await verifyDelta(
@@ -254,6 +254,8 @@ export async function verifyChain(
             current["hiri:content"].hash,
             profile2,
             crypto,
+            canonicalizer,
+            documentLoader,
           );
 
           if (!deltaResult.valid) {
@@ -388,6 +390,52 @@ export async function verifyChainWithKeyLifecycle(
         warnings,
         failures: failures.length > 0 ? failures : undefined,
       };
+    }
+
+    // Delta verification (if present): try delta, fall back to full content
+    const delta = current["hiri:delta"];
+    if (delta) {
+      const prevContentBytes = await fetchContent(previous["hiri:content"].hash);
+      if (prevContentBytes) {
+        const deltaOpsBytes = await fetchContent(delta.hash);
+        if (deltaOpsBytes) {
+          const deltaOps = JSON.parse(
+            new TextDecoder().decode(deltaOpsBytes),
+          );
+
+          const profile2 = current["hiri:signature"].canonicalization as "JCS" | "URDNA2015";
+          const deltaResult = await verifyDelta(
+            delta,
+            deltaOps,
+            prevContentBytes,
+            current["hiri:content"].hash,
+            profile2,
+            crypto,
+            canonicalizer,
+            documentLoader,
+          );
+
+          if (!deltaResult.valid) {
+            // Delta failed — fall back to full content verification
+            const contentBytes = await fetchContent(current["hiri:content"].hash);
+            if (contentBytes) {
+              const contentHash = await crypto.hash(contentBytes);
+              if (contentHash !== current["hiri:content"].hash) {
+                return {
+                  valid: false,
+                  depth,
+                  reason: `Content hash mismatch at version ${current["hiri:version"]}`,
+                  warnings,
+                  failures: failures.length > 0 ? failures : undefined,
+                };
+              }
+              warnings.push(
+                `Delta verification failed at version ${current["hiri:version"]}: ${deltaResult.reason}; fell back to full content verification`,
+              );
+            }
+          }
+        }
+      }
     }
 
     // Move to previous manifest (continue walking, don't short-circuit)

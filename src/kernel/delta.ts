@@ -14,11 +14,15 @@
 
 import { stableStringify } from "./canonicalize.js";
 import { applyPatch } from "./json-patch.js";
+import { parseNQuads, serializeNQuads, applyRDFPatch } from "./rdf-patch.js";
 import type {
   CryptoProvider,
   JsonPatchOperation,
+  RDFPatchOperation,
   ManifestDelta,
   ChainValidation,
+  Canonicalizer,
+  DocumentLoader,
 } from "./types.js";
 
 /**
@@ -41,6 +45,30 @@ export async function buildDelta(
     delta: {
       hash,
       format: "application/json-patch+json",
+      appliesTo,
+      operations: operations.length,
+    },
+    serialized,
+  };
+}
+
+/**
+ * Build RDF Patch delta metadata for embedding in a manifest.
+ * Same pattern as buildDelta() but sets format to "application/rdf-patch".
+ */
+export async function buildRDFDelta(
+  operations: RDFPatchOperation[],
+  appliesTo: string,
+  crypto: CryptoProvider,
+): Promise<{ delta: ManifestDelta; serialized: string }> {
+  const serialized = stableStringify(operations, false);
+  const bytes = new TextEncoder().encode(serialized);
+  const hash = await crypto.hash(bytes);
+
+  return {
+    delta: {
+      hash,
+      format: "application/rdf-patch",
       appliesTo,
       operations: operations.length,
     },
@@ -81,11 +109,13 @@ export function validateDeltaCoupling(
  */
 export async function verifyDelta(
   delta: ManifestDelta,
-  deltaContent: JsonPatchOperation[],
+  deltaContent: JsonPatchOperation[] | RDFPatchOperation[],
   previousContentBytes: Uint8Array,
   currentContentHash: string,
   profile: "JCS" | "URDNA2015",
   crypto: CryptoProvider,
+  canonicalizer?: Canonicalizer,
+  documentLoader?: DocumentLoader,
 ): Promise<ChainValidation> {
   // Step 1: Validate delta-canonicalization coupling
   const couplingResult = validateDeltaCoupling(profile, delta);
@@ -94,13 +124,19 @@ export async function verifyDelta(
   }
 
   // Step 2: Verify delta.appliesTo matches previous content hash
-  const previousHash = await crypto.hash(previousContentBytes);
-  if (previousHash !== delta.appliesTo) {
-    return {
-      valid: false,
-      reason: `delta.appliesTo does not match previous content hash: expected="${previousHash}", got="${delta.appliesTo}"`,
-    };
+  // For JCS: hash of raw bytes. For URDNA2015: hash of canonical N-Quads.
+  // Check is deferred to format-specific branches because URDNA2015
+  // must canonicalize before hashing (raw JSON-LD != canonical N-Quads).
+  if (delta.format === "application/json-patch+json") {
+    const previousHash = await crypto.hash(previousContentBytes);
+    if (previousHash !== delta.appliesTo) {
+      return {
+        valid: false,
+        reason: `delta.appliesTo does not match previous content hash: expected="${previousHash}", got="${delta.appliesTo}"`,
+      };
+    }
   }
+  // URDNA2015 appliesTo check happens after canonicalization (see below)
 
   // Step 3: Verify delta hash matches serialized operations
   const serialized = stableStringify(deltaContent, false);
@@ -113,41 +149,123 @@ export async function verifyDelta(
     };
   }
 
-  // Step 4: Decode previous content
-  let previousDoc: unknown;
-  try {
-    const previousStr = new TextDecoder().decode(previousContentBytes);
-    previousDoc = JSON.parse(previousStr);
-  } catch (e) {
-    return {
-      valid: false,
-      reason: `Failed to decode/parse previous content: ${e instanceof Error ? e.message : String(e)}`,
-    };
+  // Format-dispatched delta application
+  if (delta.format === "application/json-patch+json") {
+    // JCS path: JSON Patch on JSON syntax tree
+    let previousDoc: unknown;
+    try {
+      const previousStr = new TextDecoder().decode(previousContentBytes);
+      previousDoc = JSON.parse(previousStr);
+    } catch (e) {
+      return {
+        valid: false,
+        reason: `Failed to decode/parse previous content: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
+    let patchedDoc: unknown;
+    try {
+      patchedDoc = applyPatch(previousDoc, deltaContent as JsonPatchOperation[]);
+    } catch (e) {
+      return {
+        valid: false,
+        reason: `Failed to apply patch: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
+    const patchedStr = stableStringify(patchedDoc, false);
+    const patchedBytes = new TextEncoder().encode(patchedStr);
+    const patchedHash = await crypto.hash(patchedBytes);
+
+    if (patchedHash !== currentContentHash) {
+      return {
+        valid: false,
+        reason: `Delta application produces different content hash: expected="${currentContentHash}", got="${patchedHash}"`,
+      };
+    }
+
+    return { valid: true };
+  } else if (delta.format === "application/rdf-patch") {
+    // URDNA2015 path (§11.4.5): RDF Patch on N-Quads quad set
+    if (!canonicalizer?.canonicalizeNQuads) {
+      return {
+        valid: false,
+        reason: "RDF Patch verification requires a canonicalizer with canonicalizeNQuads support",
+      };
+    }
+    if (!documentLoader) {
+      return {
+        valid: false,
+        reason: "RDF Patch verification requires a documentLoader",
+      };
+    }
+
+    // Parse previous content as JSON-LD
+    let previousDoc: Record<string, unknown>;
+    try {
+      const previousStr = new TextDecoder().decode(previousContentBytes);
+      previousDoc = JSON.parse(previousStr) as Record<string, unknown>;
+    } catch (e) {
+      return {
+        valid: false,
+        reason: `Failed to decode/parse previous content as JSON-LD: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
+    // Canonicalize previous content via URDNA2015 to N-Quads
+    let prevNQuads: string;
+    let nquadsBytes: Uint8Array;
+    try {
+      nquadsBytes = await canonicalizer.canonicalize(previousDoc, documentLoader);
+      prevNQuads = new TextDecoder().decode(nquadsBytes);
+    } catch (e) {
+      return {
+        valid: false,
+        reason: `Failed to canonicalize previous content: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
+    // Verify delta.appliesTo matches hash of canonical N-Quads
+    const prevCanonicalHash = await crypto.hash(nquadsBytes);
+    if (prevCanonicalHash !== delta.appliesTo) {
+      return {
+        valid: false,
+        reason: `delta.appliesTo does not match previous content hash: expected="${prevCanonicalHash}", got="${delta.appliesTo}"`,
+      };
+    }
+
+    // Parse N-Quads into quad set and apply RDF Patch
+    const quadSet = parseNQuads(prevNQuads);
+    const patchedQuads = applyRDFPatch(quadSet, deltaContent as RDFPatchOperation[]);
+
+    // Serialize modified quad set
+    const modifiedNQuads = serializeNQuads(patchedQuads);
+
+    // Re-canonicalize via URDNA2015 (§11.4.3: post-patch re-canonicalization)
+    let canonicalBytes: Uint8Array;
+    try {
+      canonicalBytes = await canonicalizer.canonicalizeNQuads(modifiedNQuads, documentLoader);
+    } catch (e) {
+      return {
+        valid: false,
+        reason: `Failed to re-canonicalize patched N-Quads: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
+    // Hash and compare
+    const patchedHash = await crypto.hash(canonicalBytes);
+    if (patchedHash !== currentContentHash) {
+      return {
+        valid: false,
+        reason: `Delta application produces different content hash: expected="${currentContentHash}", got="${patchedHash}"`,
+      };
+    }
+
+    return { valid: true };
   }
 
-  // Step 5: Apply patch (catches throws from applyPatch)
-  let patchedDoc: unknown;
-  try {
-    patchedDoc = applyPatch(previousDoc, deltaContent);
-  } catch (e) {
-    return {
-      valid: false,
-      reason: `Failed to apply patch: ${e instanceof Error ? e.message : String(e)}`,
-    };
-  }
-
-  // Step 6: Canonicalize, encode, and hash
-  const patchedStr = stableStringify(patchedDoc, false);
-  const patchedBytes = new TextEncoder().encode(patchedStr);
-  const patchedHash = await crypto.hash(patchedBytes);
-
-  // Step 7: Compare to current content hash
-  if (patchedHash !== currentContentHash) {
-    return {
-      valid: false,
-      reason: `Delta application produces different content hash: expected="${currentContentHash}", got="${patchedHash}"`,
-    };
-  }
-
-  return { valid: true };
+  return {
+    valid: false,
+    reason: `Unknown delta format: "${delta.format}"`,
+  };
 }

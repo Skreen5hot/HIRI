@@ -22,6 +22,7 @@ export type DocumentLoader = (url: string) => Promise<{ document: object; docume
  */
 export interface Canonicalizer {
   canonicalize(doc: Record<string, unknown>, documentLoader: DocumentLoader): Promise<Uint8Array>;
+  canonicalizeNQuads?(nquads: string, documentLoader: DocumentLoader): Promise<Uint8Array>;
 }
 
 /** Resource limits for URDNA2015 canonicalization (§7.7). */
@@ -238,6 +239,14 @@ export interface JsonPatchOperation {
   path: string;
   value?: unknown;
   from?: string;
+}
+
+/** A single RDF Patch operation (§11.4.3). */
+export interface RDFPatchOperation {
+  op: "add" | "remove";
+  subject: string;   // N-Quads notation: <http://...> or _:c14nN
+  predicate: string;  // N-Quads notation: <http://...>
+  object: string;     // N-Quads notation: "literal"^^<type> or <http://...> or _:c14nN
 }
 
 /** Delta metadata embedded in a manifest. */

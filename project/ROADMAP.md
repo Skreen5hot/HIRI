@@ -568,5 +568,63 @@ Tests 6.1–6.20 cover authority format, round-trip, version enforcement, addres
 |------|--------|-------|
 | HIRI JSON-LD context authoring | Minimal | Embedded context maps all hiri: terms; not formally published |
 | Context integrity hashes (§7.6) | Deferred | SHA-256 hashes of embedded contexts not yet computed/verified at build time |
-| RDF Patch format | Deferred to M8 | URDNA2015 + RDF Patch coupling not yet implemented |
 | hiri:contextCatalog hash verification | Deferred | Catalog stores documents directly; SHA-256 verification at load time not yet implemented |
+
+---
+
+## Phase 8: RDF Patch + Delta Atomicity + Level 2 Integration (Milestone 8)
+
+**Goal:** Complete the delta verification pipeline for URDNA2015-profile manifests using RDF Patch format, verify all four Level 2 combinations (JCS/URDNA2015 x raw-sha256/CIDv1), and ensure backward compatibility.
+
+**Status:** COMPLETE
+
+**Governing Spec:** HIRI Protocol Specification v3.1.1, Milestones v1.4
+
+### 8.1 RDF Patch Module (`src/kernel/rdf-patch.ts`) — NEW
+
+**Status:** Complete
+
+Pure kernel module for N-Quads set manipulation: `parseNQuads`, `serializeNQuads`, `operationToQuad`, `applyRDFPatch`. No external dependencies. RDF set semantics: remove-of-nonexistent is a no-op.
+
+### 8.2 Canonicalizer Interface Extension
+
+**Status:** Complete
+
+Added optional `canonicalizeNQuads?(nquads: string, documentLoader: DocumentLoader): Promise<Uint8Array>` to `Canonicalizer` interface. Implemented in `URDNA2015Canonicalizer` using `jsonld.canonize()` with `inputFormat: 'application/n-quads'`.
+
+### 8.3 Delta Module Update (`src/kernel/delta.ts`)
+
+**Status:** Complete
+
+- Added `buildRDFDelta()` for RDF Patch delta construction
+- Expanded `verifyDelta()` with URDNA2015 path: canonicalize JSON-LD, parse N-Quads, apply RDF Patch, re-canonicalize, hash, compare
+- Format-aware `appliesTo` check: JCS hashes raw bytes, URDNA2015 canonicalizes first (ADR-011)
+
+### 8.4 Chain Walker Update (`src/kernel/chain.ts`)
+
+**Status:** Complete
+
+- Threaded `canonicalizer` and `documentLoader` to `verifyDelta()` calls
+- Added delta verification block to `verifyChainWithKeyLifecycle()` (previously missing)
+
+### 8.5 Files Modified
+
+| Action | File |
+|--------|------|
+| Modify | `src/kernel/types.ts` — `RDFPatchOperation`, `canonicalizeNQuads` on Canonicalizer |
+| Create | `src/kernel/rdf-patch.ts` — pure kernel RDF Patch operations |
+| Modify | `src/kernel/delta.ts` — RDF Patch support, format-aware appliesTo |
+| Modify | `src/kernel/chain.ts` — canonicalizer/documentLoader threading, lifecycle delta |
+| Modify | `src/adapters/canonicalization/urdna2015-canonicalizer.ts` — `canonicalizeNQuads` method |
+| Create | `tests/phase8.test.ts` — 22 tests |
+
+### 8.6 Domain Tests
+
+**Status:** Complete — 22/22 pass (144/144 total with M1–M7)
+
+| Test Range | Category | Count |
+|-----------|----------|-------|
+| 8.1–8.9 | RDF Patch unit tests | 9 |
+| 8.10–8.13 | RDF Patch integration (delta verification, blank nodes) | 4 |
+| 8.14–8.16 | Chain + delta E2E (chain walker, fallback, coupling) | 3 |
+| 8.17–8.22 | Level 2 combination matrix + backward compat | 6 |
