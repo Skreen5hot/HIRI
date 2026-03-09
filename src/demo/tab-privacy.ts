@@ -320,13 +320,15 @@ async function handlePoPSign(): Promise<void> {
 
     // Build manifest with PoP privacy block — content is NOT stored
     const unsigned = buildUnsignedManifest({
-      authority: demoState.authority,
+      id: `hiri://${demoState.authority}/data/pop-demo`,
+      version: "1",
+      branch: "main",
+      created: popCreatedTime,
       contentHash,
       contentFormat: "application/json",
       contentSize: contentBytes.length,
-      version: "1",
       addressing: "raw-sha256",
-      created: popCreatedTime,
+      canonicalization: "JCS",
     });
 
     // Add privacy block
@@ -817,13 +819,15 @@ async function handleSDBuild(): Promise<void> {
     // Build manifest with SD privacy block
     const created = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
     const unsigned = buildUnsignedManifest({
-      authority: demoState.authority,
+      id: `hiri://${demoState.authority}/data/sd-demo`,
+      version: "1",
+      branch: "main",
+      created,
       contentHash: sdContentHash,
       contentFormat: "application/json",
       contentSize: sdContentBytes.length,
-      version: "1",
       addressing: "raw-sha256",
-      created,
+      canonicalization: "JCS",
     });
 
     // Index root
@@ -1043,13 +1047,15 @@ async function handleAnonSign(): Promise<void> {
     const created = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
     const unsigned = buildUnsignedManifest({
-      authority,
+      id: `hiri://${authority}/data/anon-demo`,
+      version: "1",
+      branch: "main",
+      created,
       contentHash,
       contentFormat: "application/json",
       contentSize: contentBytes.length,
-      version: "1",
       addressing: "raw-sha256",
-      created,
+      canonicalization: "JCS",
     });
 
     // Add anonymous privacy block
@@ -1253,8 +1259,8 @@ async function handleAttestSign(): Promise<void> {
 
   try {
     // Generate subject identity
-    attestSubjectKeypair = await generateKeypair(crypto);
-    const subjectAuthority = deriveAuthority(attestSubjectKeypair.publicKey, "ed25519");
+    attestSubjectKeypair = await generateKeypair("subject-key");
+    const subjectAuthority = deriveAuthority(attestSubjectKeypair.publicKey, attestSubjectKeypair.algorithm);
 
     // Build a simple subject manifest
     const subjectContent = new TextEncoder().encode('{"name":"Dana Reeves","clearance":"TS/SCI"}');
@@ -1262,13 +1268,15 @@ async function handleAttestSign(): Promise<void> {
     attestCreatedTime = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
     const subjectUnsigned = buildUnsignedManifest({
-      authority: subjectAuthority,
+      id: `hiri://${subjectAuthority}/data/subject-record`,
+      version: "1",
+      branch: "main",
+      created: attestCreatedTime,
       contentHash: subjectContentHash,
       contentFormat: "application/json",
       contentSize: subjectContent.length,
-      version: "1",
       addressing: "raw-sha256",
-      created: attestCreatedTime,
+      canonicalization: "JCS",
     });
     attestSubjectManifest = await signManifest(subjectUnsigned, attestSubjectKeypair, attestCreatedTime, "JCS", crypto);
 
