@@ -259,6 +259,7 @@ async function handleResolve(): Promise<void> {
         <span>Key: <span style="color:${result.keyVerification ? (result.keyVerification.keyStatus === "active" ? "var(--green)" : "var(--yellow)") : "var(--text-muted)"}">${result.keyVerification?.keyStatus ?? "direct"}</span></span>
         <span>Revocation: <span style="color:var(--text-muted)">${result.keyVerification?.revocationStatus ?? "not-checked"}</span></span>
         <span>Timestamp: <span style="color:var(--text-muted)">${result.keyVerification?.timestampVerification ?? "advisory-only"}</span></span>
+        ${getPrivacyBadges(result.manifest)}
       </div>
       <div class="panel">
         <div class="panel-header">Verified Content (V${result.manifest["hiri:version"]})</div>
@@ -443,4 +444,32 @@ function addStep(container: HTMLElement, label: string, detail: string, success:
       <span style="color:var(--text-muted)">${detail}</span>
     </div>
   `;
+}
+
+// Privacy badge detection for resolved manifests
+function getPrivacyBadges(manifest: Record<string, unknown>): string {
+  const privacy = manifest["hiri:privacy"] as { mode?: string; parameters?: Record<string, unknown> } | undefined;
+  if (!privacy?.mode) return "";
+
+  const mode = privacy.mode;
+  const badgeMap: Record<string, { cls: string; label: string }> = {
+    "public": { cls: "badge-public", label: "public" },
+    "proof-of-possession": { cls: "badge-pop", label: "proof-of-possession" },
+    "encrypted": { cls: "badge-enc", label: "encrypted" },
+    "selective-disclosure": { cls: "badge-sd", label: "selective-disclosure" },
+    "anonymous": { cls: "badge-anon", label: "anonymous" },
+    "attestation": { cls: "badge-attest", label: "attestation" },
+  };
+
+  const badge = badgeMap[mode] ?? { cls: "", label: mode };
+  let html = `<span>Privacy: <span class="${badge.cls}" style="padding:0.1rem 0.4rem;border-radius:0.2rem">${badge.label}</span></span>`;
+
+  // Identity type for anonymous
+  if (mode === "anonymous" && privacy.parameters) {
+    const authorityType = privacy.parameters.authorityType as string;
+    const idType = authorityType === "ephemeral" ? "anonymous-ephemeral" : "pseudonymous";
+    html += `<span>Identity: <span class="badge-anon" style="padding:0.1rem 0.4rem;border-radius:0.2rem">${idType}</span></span>`;
+  }
+
+  return html;
 }

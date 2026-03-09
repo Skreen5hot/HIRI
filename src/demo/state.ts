@@ -27,6 +27,20 @@ export interface KeypairEntry {
   authority?: string;
 }
 
+/** Recipient identity for encrypted/SD demos (shared across Tab E). */
+export interface RecipientEntry {
+  id: string;
+  x25519Public: Uint8Array;
+  x25519Private: Uint8Array;
+}
+
+/** Ephemeral authority generated for anonymous demos. */
+export interface EphemeralEntry {
+  publicKey: Uint8Array;
+  privateKey: Uint8Array;
+  authority: string;
+}
+
 export class DemoState {
   // Identity
   keypairs: KeypairEntry[] = [];
@@ -39,6 +53,10 @@ export class DemoState {
 
   // Storage
   storage: InMemoryStorageAdapter = new InMemoryStorageAdapter();
+
+  // Privacy (Tab E)
+  privacyRecipients: RecipientEntry[] = [];
+  ephemeralKeypairs: EphemeralEntry[] = [];
 
   // UI state
   activeTab: string = "keys";
@@ -76,6 +94,8 @@ export class DemoState {
     this.manifests = [];
     this.currentFormData = {};
     this.storage = new InMemoryStorageAdapter();
+    this.privacyRecipients = [];
+    this.ephemeralKeypairs = [];
     this.initialized = false;
   }
 }

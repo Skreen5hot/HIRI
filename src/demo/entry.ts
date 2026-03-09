@@ -109,10 +109,76 @@ export type {
   ResolutionErrorCode,
 } from "../kernel/resolve.js";
 
+// Privacy — Resolution
+export { resolveWithPrivacy } from "../privacy/resolve.js";
+export type { PrivacyResolveOptions } from "../privacy/resolve.js";
+export { getPrivacyMode, isKnownPrivacyMode } from "../privacy/privacy-mode.js";
+
+// Privacy — Proof of Possession (Mode 1)
+export { isCustodyStale } from "../privacy/proof-of-possession.js";
+
+// Privacy — Encrypted Distribution (Mode 2)
+export { encryptContent } from "../privacy/encryption.js";
+export { decryptContent } from "../privacy/decryption.js";
+export { buildEncryptedManifest } from "../privacy/encrypted-manifest.js";
+
+// Privacy — Selective Disclosure (Mode 3)
+export { buildSelectiveDisclosureManifest } from "../privacy/selective-manifest.js";
+export {
+  buildStatementIndex,
+  verifyStatementInIndex,
+  verifyIndexRoot,
+} from "../privacy/statement-index.js";
+export {
+  generateHmacTags,
+  verifyHmacTag,
+  decryptHmacKey,
+  encryptHmacKeyForRecipients,
+} from "../privacy/hmac-disclosure.js";
+
+// Privacy — Anonymous Publication (Mode 4)
+export {
+  generateEphemeralAuthority,
+  buildAnonymousPrivacyBlock,
+} from "../privacy/anonymous.js";
+
+// Privacy — Attestation (Mode 5)
+export {
+  buildAttestationManifest,
+  verifyAttestation,
+  validateAttestationManifest,
+} from "../privacy/attestation.js";
+
+// Privacy — Chain Walking (§11)
+export { verifyPrivacyChain } from "../privacy/chain-walker.js";
+
+// Privacy types
+export type {
+  PrivacyMode,
+  PrivacyBlock,
+  PrivacyAwareVerificationResult,
+  EncryptedPrivacyParams,
+  SelectiveDisclosureParams,
+  SelectiveDisclosureContent,
+  AnonymousParams,
+  AttestationSubject,
+  AttestationClaim,
+  AttestationEvidence,
+  AttestationVerificationResult,
+} from "../privacy/types.js";
+
+// Crypto adapters — X25519 key agreement
+export { generateX25519Keypair } from "../adapters/crypto/x25519.js";
+export {
+  ed25519PublicToX25519,
+  ed25519PrivateToX25519,
+} from "../adapters/crypto/key-conversion.js";
+
 // Demo tab modules
 export { initKeysTab } from "./tab-keys.js";
 export { initBuildTab } from "./tab-build.js";
 export { initQueryTab } from "./tab-query.js";
 export { initResolveTab } from "./tab-resolve.js";
+export { initPrivacyTab } from "./tab-privacy.js";
 export { demoState } from "./state.js";
 export { loadPreset } from "./presets.js";

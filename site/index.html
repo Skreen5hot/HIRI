@@ -292,6 +292,18 @@
     .badge-revoked { background: rgba(248, 81, 73, 0.15); color: var(--red); }
     .badge-unknown { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
 
+    /* Privacy mode badges */
+    .badge-public { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+    .badge-pop    { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+    .badge-enc    { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+    .badge-sd     { background: rgba(219, 109, 40, 0.15); color: var(--orange); }
+    .badge-anon   { background: rgba(163, 113, 247, 0.15); color: #a371f7; }
+    .badge-attest { background: rgba(86, 212, 221, 0.15); color: #56d4dd; }
+
+    /* Accordion */
+    .accordion-header:hover { background: var(--surface); }
+    .accordion-body { padding: 0 0.5rem 0.5rem; }
+
     /* ── Form Elements ── */
     .form-group {
       margin-bottom: 0.75rem;
@@ -493,6 +505,9 @@
     <button class="tab-btn" data-tab="resolve">
       D<span class="tab-label">Resolve</span>
     </button>
+    <button class="tab-btn" data-tab="privacy">
+      E<span class="tab-label">Privacy</span>
+    </button>
   </div>
 
   <!-- Tab A: Identity & Authority -->
@@ -528,6 +543,15 @@
     <p class="workspace-desc">Resolve HIRI URIs against different storage backends. Inject faults to test tamper detection.</p>
     <div id="resolve-content">
       <div class="info-box info">Create signed content in Tab B, then resolve URIs here.</div>
+    </div>
+  </div>
+
+  <!-- Tab E: Privacy Sandbox -->
+  <div class="workspace" id="tab-privacy">
+    <h2>Privacy Sandbox</h2>
+    <p class="workspace-desc">Explore five privacy modes: Proof of Possession, Encrypted Distribution, Selective Disclosure, Anonymous Publication, and Third-Party Attestation.</p>
+    <div id="privacy-content">
+      <div class="info-box info">Generate an identity in Tab A first, then explore privacy modes here.</div>
     </div>
   </div>
 
@@ -596,6 +620,7 @@
           if (tabId === "build") demo.initBuildTab(document.getElementById("build-content"));
           if (tabId === "query") demo.initQueryTab(document.getElementById("query-content"));
           if (tabId === "resolve") demo.initResolveTab(document.getElementById("resolve-content"));
+          if (tabId === "privacy") demo.initPrivacyTab(document.getElementById("privacy-content"));
         });
       });
 
@@ -612,6 +637,7 @@
       demo.initBuildTab(document.getElementById("build-content"));
       demo.initQueryTab(document.getElementById("query-content"));
       demo.initResolveTab(document.getElementById("resolve-content"));
+      demo.initPrivacyTab(document.getElementById("privacy-content"));
 
       // 7. Preset selector (wired in Step 6)
       document.getElementById("presetSelect").addEventListener("change", async (e) => {
@@ -624,6 +650,7 @@
           demo.initBuildTab(document.getElementById("build-content"));
           demo.initQueryTab(document.getElementById("query-content"));
           demo.initResolveTab(document.getElementById("resolve-content"));
+          demo.initPrivacyTab(document.getElementById("privacy-content"));
         }
         // Show loaded preset indicator
         const indicator = document.getElementById("presetIndicator");
