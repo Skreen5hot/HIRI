@@ -849,7 +849,16 @@ async function handleSDBuild(): Promise<void> {
         indexSalt: bytesToBase64url(sdSalt),
         indexRoot,
         mandatoryStatements: sdMandatoryIndices,
-        hmacKeyRecipients: hmacDistribution,
+        hmacKeyRecipients: {
+          ephemeralPublicKey: bytesToHex(hmacDistribution.ephemeralPublicKey),
+          iv: bytesToHex(hmacDistribution.iv),
+          keyAgreement: "X25519-HKDF-SHA256",
+          recipients: hmacDistribution.recipients.map(r => ({
+            id: r.id,
+            encryptedHmacKey: bytesToHex(r.encryptedHmacKey),
+            disclosedStatements: r.disclosedStatements,
+          })),
+        },
       },
     };
 
