@@ -41,7 +41,9 @@
   },
   "dependencies": {
     "@ipld/dag-cbor": "^9.2.5",
+    "@noble/curves": "^2.0.1",
     "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1",
     "jsonld": "^9.0.0",
     "multiformats": "^13.4.2",
     "oxigraph": "^0.5.5"
