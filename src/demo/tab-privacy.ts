@@ -188,9 +188,11 @@ function renderChainWalkPanel(): void {
 
 function ensureRecipients(): void {
   if (demoState.privacyRecipients.length > 0) return;
+  const alice = generateX25519Keypair();
+  const bob = generateX25519Keypair();
   demoState.privacyRecipients = [
-    { id: "alice", ...generateX25519Keypair() },
-    { id: "bob", ...generateX25519Keypair() },
+    { id: "alice", x25519Public: alice.publicKey, x25519Private: alice.privateKey },
+    { id: "bob", x25519Public: bob.publicKey, x25519Private: bob.privateKey },
   ];
 }
 
@@ -437,7 +439,8 @@ function wireEncryptedPanel(): void {
   document.getElementById("btn-enc-encrypt")!.addEventListener("click", handleEncrypt);
   document.getElementById("btn-enc-add-recipient")!.addEventListener("click", () => {
     const name = `recipient-${demoState.privacyRecipients.length + 1}`;
-    demoState.privacyRecipients.push({ id: name, ...generateX25519Keypair() });
+    const kp = generateX25519Keypair();
+    demoState.privacyRecipients.push({ id: name, x25519Public: kp.publicKey, x25519Private: kp.privateKey });
     document.getElementById("enc-recipients")!.innerHTML = recipientListHTML(true);
   });
 }
@@ -776,9 +779,9 @@ async function handleSDBuild(): Promise<void> {
   const keypair = demoState.activeKeypair!;
 
   try {
-    // Build statement index
-    const indexResult = await buildStatementIndex(sdStatements);
-    sdSalt = indexResult.salt;
+    // Build statement index (takes joined N-Quads string, not array)
+    const indexResult = await buildStatementIndex(sdStatements.join("\n"));
+    sdSalt = indexResult.indexSalt;
     sdStatementHashes = indexResult.statementHashes;
 
     // Generate HMAC tags
@@ -1019,7 +1022,7 @@ async function handleAnonSign(): Promise<void> {
 
     if (authorityType === "ephemeral") {
       const ephemeral = await generateEphemeralAuthority();
-      keypair = { publicKey: ephemeral.publicKey, privateKey: ephemeral.privateKey };
+      keypair = { publicKey: ephemeral.publicKey, privateKey: ephemeral.privateKey, algorithm: "ed25519", keyId: ephemeral.keyId };
       authority = ephemeral.authority;
       // Store for reference
       demoState.ephemeralKeypairs.push({
@@ -1038,7 +1041,7 @@ async function handleAnonSign(): Promise<void> {
         }];
       }
       const stored = demoState.ephemeralKeypairs[0];
-      keypair = { publicKey: stored.publicKey, privateKey: stored.privateKey };
+      keypair = { publicKey: stored.publicKey, privateKey: stored.privateKey, algorithm: "ed25519", keyId: "pseudonymous-key" };
       authority = stored.authority;
     }
 
