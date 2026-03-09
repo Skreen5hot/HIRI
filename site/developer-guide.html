@@ -358,7 +358,7 @@ Rules:
   &bull; Layer 0 MUST NOT import from Layer 1 or Layer 2
   &bull; All crypto operations injected via CryptoProvider interface
   &bull; Kernel code has zero non-deterministic API calls
-  &bull; Enforced by automated purity tests (144/144 passing)</div>
+  &bull; Enforced by automated purity tests (269/269 passing)</div>
 
     <p>
       The kernel contains all protocol logic as <strong>pure functions</strong>. No
@@ -375,7 +375,7 @@ git clone &lt;repository-url&gt;
 cd hiri
 npm install
 
-# Run all tests (144/144)
+# Run all tests (269/269)
 npm test
 
 # Run kernel purity check
@@ -1281,14 +1281,14 @@ Logical hash V1&rarr;V2:     aaa = aaa  SUCCEEDS</div>
       <tr>
         <td><code>encryptContent</code></td>
         <td><code>privacy/encryption</code></td>
-        <td><code>(plaintext, recipientPubKeys, options?) &rarr; Promise&lt;EncryptedBundle&gt;</code></td>
-        <td>Encrypt content for specified recipients using X25519-HKDF-SHA256 + AES-256-GCM.</td>
+        <td><code>(canonicalBytes, recipientPubKeys, crypto, hkdfLabel?) &rarr; Promise&lt;EncryptionResult&gt;</code></td>
+        <td>Encrypt content for specified recipients using X25519-HKDF-SHA256 + AES-256-GCM. Default label: <code>"hiri-cek-v1.1"</code>.</td>
       </tr>
       <tr>
         <td><code>decryptContent</code></td>
-        <td><code>privacy/encryption</code></td>
-        <td><code>(bundle, ownPrivateKey, ownId) &rarr; Promise&lt;Uint8Array&gt;</code></td>
-        <td>Decrypt content using recipient's X25519 private key.</td>
+        <td><code>privacy/decryption</code></td>
+        <td><code>(ciphertext, params, ownPrivateKey, ownRecipientId, crypto, hkdfLabel?) &rarr; Promise&lt;DecryptionResult&gt;</code></td>
+        <td>Decrypt content using recipient's X25519 private key. <code>params</code> carries ephemeral public key and IV.</td>
       </tr>
       <tr>
         <td><code>generateHmacTags</code></td>
@@ -1323,25 +1323,25 @@ Logical hash V1&rarr;V2:     aaa = aaa  SUCCEEDS</div>
       <tr>
         <td><code>buildAnonymousPrivacyBlock</code></td>
         <td><code>privacy/anonymous</code></td>
-        <td><code>(mode, linkedAuthorityHash?) &rarr; PrivacyBlock</code></td>
+        <td><code>(params: AnonymousParams) &rarr; Record&lt;string, unknown&gt;</code></td>
         <td>Build privacy block for anonymous or pseudonymous publication.</td>
       </tr>
       <tr>
         <td><code>buildAttestationManifest</code></td>
         <td><code>privacy/attestation</code></td>
-        <td><code>(params) &rarr; UnsignedManifest</code></td>
+        <td><code>(params: BuildAttestationParams) &rarr; UnsignedAttestationManifest</code></td>
         <td>Build an unsigned attestation manifest referencing a target manifest.</td>
       </tr>
       <tr>
         <td><code>verifyAttestation</code></td>
         <td><code>privacy/attestation</code></td>
-        <td><code>(attestation, attesterKey, crypto) &rarr; Promise&lt;AttestationResult&gt;</code></td>
-        <td>Verify an attestation manifest's signature and cross-reference.</td>
+        <td><code>(attestation, attestorPublicKey, subjectManifest, subjectPublicKey, crypto, attestorKeyStatus?, currentTimestamp?) &rarr; Promise&lt;AttestationVerificationResult&gt;</code></td>
+        <td>Verify attestation signature and cross-reference against subject manifest. Dual-signature verification requires both attestor and subject public keys.</td>
       </tr>
       <tr>
         <td><code>getLogicalPlaintextHash</code></td>
-        <td><code>privacy/cross-mode</code></td>
-        <td><code>(manifest) &rarr; string</code></td>
+        <td><code>privacy/plaintext-hash</code></td>
+        <td><code>(manifest) &rarr; PlaintextHashResult</code></td>
         <td>Extract logical plaintext hash regardless of privacy mode. Use for cross-version content comparisons.</td>
       </tr>
     </table>
@@ -1350,10 +1350,13 @@ Logical hash V1&rarr;V2:     aaa = aaa  SUCCEEDS</div>
     <table>
       <tr><th>Type</th><th>Purpose</th></tr>
       <tr><td><code>PrivacyAwareResult</code></td><td>Resolution result: verified, privacyMode, contentStatus, content?, warnings</td></tr>
+      <tr><td><code>EncryptionResult</code></td><td>Encryption output: ciphertext, iv, plaintextHash, ciphertextHash, ephemeralPublicKey, recipients</td></tr>
+      <tr><td><code>DecryptionResult</code></td><td>Decryption output: plaintext, plaintextHashValid</td></tr>
       <tr><td><code>HmacKeyRecipients</code></td><td>Serialized HMAC key distribution block: ephemeralPublicKey (hex), iv (hex), recipients[]</td></tr>
       <tr><td><code>SelectiveDisclosureParams</code></td><td>SD parameters: mandatoryStatements, hmacTags, indexSalt, mandatoryNQuads</td></tr>
       <tr><td><code>EphemeralAuthority</code></td><td>Ephemeral keypair + derived authority for anonymous publication</td></tr>
-      <tr><td><code>AttestationResult</code></td><td>Attestation verification: valid, trustLevel, attesterAuthority, targetHash</td></tr>
+      <tr><td><code>PlaintextHashResult</code></td><td>Plaintext hash extraction: hash, warnings</td></tr>
+      <tr><td><code>AttestationVerificationResult</code></td><td>Attestation verification result from dual-signature check</td></tr>
     </table>
 
     <!-- ───────────────── TYPES ───────────────── -->
