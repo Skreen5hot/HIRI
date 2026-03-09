@@ -585,22 +585,34 @@ async function resolveSelectiveDisclosure(
           options.recipientId,
         );
 
-        // Verify HMAC tags for disclosed statements
+        // Verify HMAC tags for mandatory statements (where text is available)
         const hmacTags = sdContent.hmacTags.map((hex) => hexToBytes(hex));
         const disclosed = recipientEntry.disclosedStatements === "all"
           ? Array.from({ length: sdParams.statementCount }, (_, i) => i)
           : recipientEntry.disclosedStatements;
 
+        let mandatoryVerified = 0;
+        let nonMandatoryAuthorized = 0;
         for (const idx of disclosed) {
-          if (disclosedIndices.includes(idx)) continue; // Already verified as mandatory
-          const tagValid = verifyHmacTag(
-            sdContent.mandatoryNQuads[sdParams.mandatoryStatements.indexOf(idx)] ?? "",
-            hmacKey,
-            indexSalt,
-            hmacTags[idx],
-          );
-          if (!tagValid) {
-            warnings.push(`HMAC tag verification failed for statement index ${idx}`);
+          const mandatoryPos = sdParams.mandatoryStatements.indexOf(idx);
+          if (mandatoryPos !== -1) {
+            // Statement text available in published blob — verify HMAC tag
+            const tagValid = verifyHmacTag(
+              sdContent.mandatoryNQuads[mandatoryPos],
+              hmacKey,
+              indexSalt,
+              hmacTags[idx],
+            );
+            if (!tagValid) {
+              warnings.push(`HMAC tag verification failed for statement index ${idx}`);
+            } else {
+              mandatoryVerified++;
+            }
+          } else {
+            // Non-mandatory: statement text not in published blob.
+            // HMAC key decryption success proves authorization;
+            // tag verification requires out-of-band statement delivery.
+            nonMandatoryAuthorized++;
           }
         }
 
