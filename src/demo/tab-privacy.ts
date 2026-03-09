@@ -26,7 +26,6 @@ import { stableStringify } from "../kernel/canonicalize.js";
 import { defaultCryptoProvider } from "../adapters/crypto/provider.js";
 import { InMemoryStorageAdapter } from "../adapters/persistence/storage.js";
 import { generateX25519Keypair } from "../adapters/crypto/x25519.js";
-import { ed25519PublicToX25519 } from "../adapters/crypto/key-conversion.js";
 import { demoState } from "./state.js";
 import type { RecipientEntry } from "./state.js";
 import type { SigningKey, ResolutionManifest } from "../kernel/types.js";
@@ -801,12 +800,10 @@ async function handleSDBuild(): Promise<void> {
     if (aliceRecipient) recipientKeys.set("alice", aliceRecipient.x25519Public);
     if (bobRecipient) recipientKeys.set("bob", bobRecipient.x25519Public);
 
-    const publisherX25519 = ed25519PublicToX25519(keypair.publicKey);
     const hmacDistribution = await encryptHmacKeyForRecipients(
       hmacKey,
       recipientKeys,
       disclosureMap,
-      publisherX25519,
     );
 
     // Build the SD content blob
