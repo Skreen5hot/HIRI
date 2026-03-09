@@ -41,7 +41,7 @@ import { buildSelectiveDisclosureManifest } from "../privacy/selective-manifest.
 import { buildStatementIndex, verifyStatementInIndex, verifyIndexRoot } from "../privacy/statement-index.js";
 import { generateHmacTags, verifyHmacTag, decryptHmacKey, encryptHmacKeyForRecipients } from "../privacy/hmac-disclosure.js";
 import { generateEphemeralAuthority, buildAnonymousPrivacyBlock } from "../privacy/anonymous.js";
-import { buildAttestationManifest, verifyAttestation, validateAttestationManifest } from "../privacy/attestation.js";
+import { buildAttestationManifest, signAttestationManifest, verifyAttestation, validateAttestationManifest } from "../privacy/attestation.js";
 import type { SignedAttestationManifest } from "../privacy/attestation.js";
 import type { EncryptedPrivacyParams, AnonymousParams, AttestationSubject, AttestationClaim, AttestationEvidence } from "../privacy/types.js";
 
@@ -61,6 +61,7 @@ export function initPrivacyTab(el: HTMLElement): void {
 function render(): void {
   container.innerHTML = `
     <div id="privacy-gate"></div>
+    <div id="privacy-chain-walk" style="display:none"></div>
     <div id="privacy-main" style="display:none">
       <div class="privacy-accordion">
         ${renderAccordionHeader("pop", "E.1", "Proof of Possession", "§6", "badge-pop")}
@@ -116,6 +117,71 @@ function checkGate(): void {
   wireAnonPanel();
   wireAttestPanel();
   wireHoodToggle();
+  renderChainWalkPanel();
+}
+
+// ── Chain Walk Result Panel ──────────────────────────────────────────
+
+function renderChainWalkPanel(): void {
+  const el = document.getElementById("privacy-chain-walk")!;
+
+  // Only show for lifecycle preset (3+ manifests with privacy blocks)
+  if (demoState.manifests.length < 3) {
+    el.style.display = "none";
+    return;
+  }
+
+  const hasPrivacyModes = demoState.manifests.some(
+    m => (m.manifest as Record<string, unknown>)["hiri:privacy"] !== undefined
+  );
+  if (!hasPrivacyModes) {
+    el.style.display = "none";
+    return;
+  }
+
+  const modeColors: Record<string, string> = {
+    "proof-of-possession": "badge-pop",
+    "encrypted": "badge-enc",
+    "selective-disclosure": "badge-sd",
+    "anonymous": "badge-anon",
+    "attestation": "badge-attest",
+  };
+
+  const rows = demoState.manifests.map(entry => {
+    const priv = (entry.manifest as Record<string, unknown>)["hiri:privacy"] as { mode?: string } | undefined;
+    const mode = priv?.mode ?? "public";
+    const badgeClass = modeColors[mode] ?? "badge-public";
+    const hashShort = entry.manifestHash.substring(0, 12) + "...";
+    return `
+      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid var(--border)">
+        <span style="font-weight:600;min-width:1.5rem">V${entry.version}</span>
+        <span class="badge ${badgeClass}">${mode}</span>
+        <code style="font-size:0.7rem;color:var(--text-muted)">${hashShort}</code>
+      </div>
+    `;
+  }).join("");
+
+  // Check if all versions share the same logical plaintext
+  const hashes = demoState.manifests.map(m => {
+    const priv = (m.manifest as Record<string, unknown>)["hiri:privacy"] as { parameters?: { plaintextHash?: string } } | undefined;
+    return priv?.parameters?.plaintextHash ?? m.contentHash;
+  });
+  const allSame = hashes.every(h => h === hashes[0]);
+
+  el.style.display = "";
+  el.innerHTML = `
+    <div class="info-box info" style="margin-bottom:1rem">
+      <div style="font-weight:600;margin-bottom:0.5rem">Privacy Chain Walk (§11)</div>
+      <div style="font-size:0.8rem;margin-bottom:0.5rem">
+        ${demoState.manifests.length}-version chain with cross-mode privacy transitions:
+      </div>
+      ${rows}
+      ${allSame
+        ? `<div style="margin-top:0.5rem;font-size:0.75rem;color:var(--green)">✓ All versions share the same logical plaintext hash</div>`
+        : `<div style="margin-top:0.5rem;font-size:0.75rem;color:var(--text-muted)">Content hashes differ across modes (expected for encrypted versions)</div>`
+      }
+    </div>
+  `;
 }
 
 // ── Shared Recipients ──────────────────────────────────────────────────
@@ -384,31 +450,29 @@ async function handleEncrypt(): Promise<void> {
     // Compute plaintext hash
     const plaintextHash = await crypto.hash(plaintextBytes);
 
-    // Build recipient list for encryption
-    const recipients = demoState.privacyRecipients.map(r => ({
-      id: r.id,
-      x25519PublicKey: r.x25519Public,
-    }));
-
-    // Get publisher's X25519 public key
-    const publisherX25519 = ed25519PublicToX25519(keypair.publicKey);
+    // Build recipient map for encryption
+    const recipientKeys = new Map<string, Uint8Array>();
+    for (const r of demoState.privacyRecipients) {
+      recipientKeys.set(r.id, r.x25519Public);
+    }
 
     // Encrypt
-    const encResult = await encryptContent(plaintextBytes, recipients, publisherX25519);
+    const encResult = await encryptContent(plaintextBytes, recipientKeys, crypto);
 
     // Build encrypted manifest
     const created = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
     const encManifestParams = buildEncryptedManifest({
-      authority: demoState.authority,
-      ciphertext: encResult.ciphertext,
-      plaintextHash,
+      baseManifestParams: {
+        id: `hiri://${demoState.authority}/data/encrypted-demo`,
+        version: "1",
+        branch: "main",
+        created,
+        addressing: "raw-sha256",
+        canonicalization: "JCS",
+      },
+      encryptionResult: encResult,
       plaintextFormat: "application/json",
       plaintextSize: plaintextBytes.length,
-      iv: encResult.iv,
-      ephemeralPublicKey: encResult.ephemeralPublicKey,
-      recipients: encResult.recipientKeys,
-      version: "1",
-      created,
     });
 
     const signed = await signManifest(encManifestParams, keypair, created, "JCS", crypto);
@@ -465,7 +529,7 @@ async function handleEncrypt(): Promise<void> {
     updateHood("enc-encrypt", {
       function: "encryptContent + buildEncryptedManifest + signManifest",
       mode: "encrypted",
-      recipientCount: recipients.length,
+      recipientCount: recipientKeys.size,
       plaintextHash,
       ciphertextHash,
       manifestHash: encManifestHash,
@@ -598,6 +662,61 @@ function renderSDPanel(): string {
       </div>
     </div>
   `;
+}
+
+/** Animated dictionary attack simulation for the SD panel. */
+function runDictionaryAttackAnimation(): void {
+  const el = document.getElementById("sd-attack-result")!;
+  const totalDates = 36525; // ~100 years of dates
+  const batchSize = 1500;
+  let tried = 0;
+  let hashFound = false;
+  const hashFoundAt = Math.floor(totalDates * 0.62); // find hash match at ~62%
+
+  el.innerHTML = `
+    <div style="font-size:0.75rem;padding:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
+      <div>Withheld statement [4] is birthDate.</div>
+      <div style="margin-top:0.25rem">Attacker enumerates dates against salted hash...</div>
+      <div style="margin-top:0.5rem">
+        <div style="background:var(--bg);border-radius:3px;height:16px;overflow:hidden;position:relative">
+          <div id="sd-attack-bar" style="height:100%;width:0%;background:var(--yellow);transition:width 0.1s;border-radius:3px"></div>
+        </div>
+        <div id="sd-attack-counter" style="font-size:0.7rem;color:var(--text-muted);margin-top:0.15rem">0 / ${totalDates} dates tried</div>
+      </div>
+      <div id="sd-attack-phases" style="margin-top:0.5rem"></div>
+    </div>
+  `;
+
+  const bar = document.getElementById("sd-attack-bar")!;
+  const counter = document.getElementById("sd-attack-counter")!;
+  const phases = document.getElementById("sd-attack-phases")!;
+
+  function tick(): void {
+    tried = Math.min(tried + batchSize, totalDates);
+    const pct = (tried / totalDates) * 100;
+    bar.style.width = pct + "%";
+    counter.textContent = `${tried.toLocaleString()} / ${totalDates.toLocaleString()} dates tried`;
+
+    if (!hashFound && tried >= hashFoundAt) {
+      hashFound = true;
+      bar.style.background = "var(--yellow)";
+      phases.innerHTML = `<div style="color:var(--yellow)">⚠ Salted hash match found at attempt ${hashFoundAt.toLocaleString()}!</div>`;
+    }
+
+    if (tried < totalDates) {
+      requestAnimationFrame(tick);
+    } else {
+      // Attack complete — show result
+      bar.style.background = "var(--green)";
+      phases.innerHTML = `
+        <div style="color:var(--yellow)">⚠ Salted hash match found at attempt ${hashFoundAt.toLocaleString()}</div>
+        <div style="color:var(--green);margin-top:0.15rem">✓ But HMAC tag <strong>cannot be forged</strong> without the key</div>
+        <div style="color:var(--text-muted);margin-top:0.25rem;font-size:0.7rem">Defense-in-depth: salt defeats rainbow tables, HMAC key defeats per-manifest enumeration (§B.9)</div>
+      `;
+    }
+  }
+
+  requestAnimationFrame(tick);
 }
 
 let sdStatements: string[] = [];
@@ -761,16 +880,8 @@ async function handleSDBuild(): Promise<void> {
     document.getElementById("btn-sd-verify-alice")!.addEventListener("click", () => handleSDVerify("alice"));
     document.getElementById("btn-sd-verify-bob")!.addEventListener("click", () => handleSDVerify("bob"));
 
-    // Static dictionary attack result
-    document.getElementById("sd-attack-result")!.innerHTML = `
-      <div style="font-size:0.75rem;padding:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
-        <div>Withheld statement [4] is birthDate.</div>
-        <div>Attacker tries date combinations against salted hash...</div>
-        <div style="margin-top:0.25rem;color:var(--yellow)">⚠ Salted hash match <em>could</em> be found by enumeration</div>
-        <div style="color:var(--green)">✓ But HMAC tag <strong>cannot be forged</strong> without the key</div>
-        <div style="color:var(--text-muted);margin-top:0.25rem;font-size:0.7rem">Defense-in-depth: salt defeats rainbow tables, HMAC key defeats per-manifest enumeration (§B.9)</div>
-      </div>
-    `;
+    // Animated dictionary attack simulation
+    runDictionaryAttackAnimation();
 
     // Clear hmac key
     hmacKey.fill(0);
@@ -903,7 +1014,7 @@ async function handleAnonSign(): Promise<void> {
     let authority: string;
 
     if (authorityType === "ephemeral") {
-      const ephemeral = await generateEphemeralAuthority(crypto);
+      const ephemeral = await generateEphemeralAuthority();
       keypair = { publicKey: ephemeral.publicKey, privateKey: ephemeral.privateKey };
       authority = ephemeral.authority;
       // Store for reference
@@ -915,7 +1026,7 @@ async function handleAnonSign(): Promise<void> {
     } else {
       // Pseudonymous — generate once, reuse
       if (demoState.ephemeralKeypairs.length === 0 || !demoState.ephemeralKeypairs[0]) {
-        const pseudo = await generateEphemeralAuthority(crypto);
+        const pseudo = await generateEphemeralAuthority();
         demoState.ephemeralKeypairs = [{
           publicKey: pseudo.publicKey,
           privateKey: pseudo.privateKey,
@@ -942,7 +1053,11 @@ async function handleAnonSign(): Promise<void> {
     });
 
     // Add anonymous privacy block
-    const anonBlock = buildAnonymousPrivacyBlock(authorityType, contentVisibility as AnonymousParams["contentVisibility"]);
+    const anonBlock = buildAnonymousPrivacyBlock({
+      authorityType,
+      contentVisibility: contentVisibility as AnonymousParams["contentVisibility"],
+      identityDisclosable: false,
+    });
     (unsigned as Record<string, unknown>)["hiri:privacy"] = anonBlock;
 
     const signed = await signManifest(unsigned, keypair, created, "JCS", crypto);
@@ -988,8 +1103,8 @@ async function handleAnonSign(): Promise<void> {
 async function handleAnonUnlink(): Promise<void> {
   const resultDiv = document.getElementById("anon-unlink-result")!;
   try {
-    const eph1 = await generateEphemeralAuthority(crypto);
-    const eph2 = await generateEphemeralAuthority(crypto);
+    const eph1 = await generateEphemeralAuthority();
+    const eph2 = await generateEphemeralAuthority();
 
     const keysDiffer = bytesToHex(eph1.publicKey) !== bytesToHex(eph2.publicKey);
 
@@ -1016,7 +1131,7 @@ async function handleAnonPseudo(): Promise<void> {
   const resultDiv = document.getElementById("anon-pseudo-result")!;
   try {
     // Generate one pseudonymous key, sign two manifests
-    const pseudo = await generateEphemeralAuthority(crypto);
+    const pseudo = await generateEphemeralAuthority();
     const authority = pseudo.authority;
 
     resultDiv.innerHTML = `
@@ -1172,6 +1287,7 @@ async function handleAttestSign(): Promise<void> {
 
     const attestationUnsigned = buildAttestationManifest({
       attestorAuthority,
+      attestationId: "clearance-check-1",
       subject: {
         authority: subjectAuthority,
         manifestHash: attestSubjectManifestHash,
@@ -1188,15 +1304,14 @@ async function handleAttestSign(): Promise<void> {
       },
       evidence: { method, description },
       version: "1",
-      created: attestCreatedTime,
+      timestamp: attestCreatedTime,
     });
 
-    const signed = await signManifest(attestationUnsigned as unknown as Parameters<typeof signManifest>[0], attestorKeypair, attestCreatedTime, "JCS", crypto);
-    attestManifest = signed as unknown as SignedAttestationManifest;
+    attestManifest = await signAttestationManifest(attestationUnsigned, attestorKeypair, attestCreatedTime, crypto);
 
     // Store
     attestStorage = new InMemoryStorageAdapter();
-    const attestManifestBytes = new TextEncoder().encode(stableStringify(signed));
+    const attestManifestBytes = new TextEncoder().encode(stableStringify(attestManifest as unknown as Record<string, unknown>));
     const attestManifestHash = await crypto.hash(attestManifestBytes);
     await attestStorage.put(attestManifestHash, attestManifestBytes);
     await attestStorage.put(attestSubjectManifestHash, subjectManifestBytes);

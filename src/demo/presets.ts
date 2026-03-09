@@ -26,6 +26,14 @@ import { CIDv1Algorithm } from "../adapters/content-addressing/cidv1-algorithm.j
 import { createCatalogDocumentLoader } from "../adapters/canonicalization/secure-document-loader.js";
 import { buildRDFDelta } from "../kernel/delta.js";
 import { parseNQuads } from "../kernel/rdf-patch.js";
+import { generateX25519Keypair } from "../adapters/crypto/x25519.js";
+import { ed25519PublicToX25519 } from "../adapters/crypto/key-conversion.js";
+import { encryptContent } from "../privacy/encryption.js";
+import { buildEncryptedManifest } from "../privacy/encrypted-manifest.js";
+import { buildStatementIndex } from "../privacy/statement-index.js";
+import { generateHmacTags, encryptHmacKeyForRecipients } from "../privacy/hmac-disclosure.js";
+import { generateEphemeralAuthority, buildAnonymousPrivacyBlock } from "../privacy/anonymous.js";
+import { buildAttestationManifest, signAttestationManifest } from "../privacy/attestation.js";
 import type {
   ResolutionManifest,
   KeyDocument,
@@ -503,6 +511,575 @@ function parseQuadLine(line: string): { subject: string; predicate: string; obje
   };
 }
 
+// ── Privacy Helpers ────────────────────────────────────────────────────
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function bytesToBase64url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// ── Preset: Proof of Possession ────────────────────────────────────────
+
+async function loadPrivacyPoP(): Promise<void> {
+  demoState.clear();
+
+  const key1 = await generateKeypair("key-1");
+  const authority = deriveAuthority(key1.publicKey, key1.algorithm);
+  demoState.keypairs.push({ keypair: key1, keyId: key1.keyId, authority });
+  demoState.authority = authority;
+  demoState.initialized = true;
+
+  const contentStr = '{"@type":"Person","name":"Dana Reeves","clearance":"TS/SCI"}';
+  const contentBytes = new TextEncoder().encode(contentStr);
+  const contentHash = await crypto.hash(contentBytes);
+
+  const unsigned = buildUnsignedManifest({
+    id: `hiri://${authority}/data/person`,
+    version: "1",
+    branch: "main",
+    created: "2025-01-15T00:00:00Z",
+    contentHash,
+    contentFormat: "application/json",
+    contentSize: contentBytes.length,
+    addressing: "raw-sha256",
+    canonicalization: "JCS",
+  });
+
+  (unsigned as Record<string, unknown>)["hiri:privacy"] = {
+    mode: "proof-of-possession",
+    parameters: { refreshPolicy: "P30D" },
+  };
+
+  const signed = await signManifest(unsigned, key1, "2025-01-15T00:00:00Z", "JCS", crypto);
+  const manifestHash = await hashManifest(signed, crypto);
+  await demoState.storage.put(manifestHash, new TextEncoder().encode(stableStringify(signed)));
+  // Content NOT stored (§6.4)
+
+  demoState.manifests.push({
+    manifest: signed,
+    manifestHash,
+    contentBytes,
+    contentHash,
+    version: "1",
+  });
+}
+
+// ── Preset: Encrypted for Two Recipients ───────────────────────────────
+
+async function loadPrivacyEncrypted(): Promise<void> {
+  demoState.clear();
+
+  const key1 = await generateKeypair("key-1");
+  const authority = deriveAuthority(key1.publicKey, key1.algorithm);
+  demoState.keypairs.push({ keypair: key1, keyId: key1.keyId, authority });
+  demoState.authority = authority;
+  demoState.initialized = true;
+
+  // Recipients
+  const alice = { id: "alice", ...generateX25519Keypair() };
+  const bob = { id: "bob", ...generateX25519Keypair() };
+  demoState.privacyRecipients = [
+    { id: alice.id, x25519Public: alice.x25519Public, x25519Private: alice.x25519Private },
+    { id: bob.id, x25519Public: bob.x25519Public, x25519Private: bob.x25519Private },
+  ];
+
+  const plaintextStr = '{"name":"Dana Reeves","clearance":"TS/SCI","compartment":"GAMMA"}';
+  const plaintextBytes = new TextEncoder().encode(plaintextStr);
+
+  const recipientKeys = new Map<string, Uint8Array>();
+  recipientKeys.set("alice", alice.x25519Public);
+  recipientKeys.set("bob", bob.x25519Public);
+
+  const encResult = await encryptContent(plaintextBytes, recipientKeys, crypto);
+
+  const unsigned = buildEncryptedManifest({
+    baseManifestParams: {
+      id: `hiri://${authority}/data/encrypted-person`,
+      version: "1",
+      branch: "main",
+      created: "2025-01-15T00:00:00Z",
+      addressing: "raw-sha256",
+      canonicalization: "JCS",
+    },
+    encryptionResult: encResult,
+    plaintextFormat: "application/json",
+    plaintextSize: plaintextBytes.length,
+  });
+
+  const signed = await signManifest(unsigned, key1, "2025-01-15T00:00:00Z", "JCS", crypto);
+  const manifestHash = await hashManifest(signed, crypto);
+  await demoState.storage.put(manifestHash, new TextEncoder().encode(stableStringify(signed)));
+  await demoState.storage.put(signed["hiri:content"].hash, encResult.ciphertext);
+
+  demoState.manifests.push({
+    manifest: signed,
+    manifestHash,
+    contentBytes: encResult.ciphertext,
+    contentHash: signed["hiri:content"].hash,
+    version: "1",
+  });
+}
+
+// ── Preset: Selective Disclosure ────────────────────────────────────────
+
+async function loadPrivacySD(): Promise<void> {
+  demoState.clear();
+
+  const key1 = await generateKeypair("key-1");
+  const authority = deriveAuthority(key1.publicKey, key1.algorithm);
+  demoState.keypairs.push({ keypair: key1, keyId: key1.keyId, authority });
+  demoState.authority = authority;
+  demoState.initialized = true;
+
+  // Recipients
+  const alice = { id: "alice", ...generateX25519Keypair() };
+  const bob = { id: "bob", ...generateX25519Keypair() };
+  demoState.privacyRecipients = [
+    { id: alice.id, x25519Public: alice.x25519Public, x25519Private: alice.x25519Private },
+    { id: bob.id, x25519Public: bob.x25519Public, x25519Private: bob.x25519Private },
+  ];
+
+  const statements = [
+    '<https://example.org/person/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> .',
+    '<https://example.org/person/1> <http://schema.org/name> "Dana Reeves" .',
+    '<https://example.org/person/1> <http://schema.org/jobTitle> "Protocol Architect" .',
+    '<https://example.org/person/1> <http://schema.org/email> "dana@example.org" .',
+    '<https://example.org/person/1> <http://schema.org/birthDate> "1990-05-15" .',
+  ];
+  const mandatoryIndices = [0, 1];
+
+  // Build statement index
+  const indexResult = await buildStatementIndex(statements);
+
+  // Generate HMAC tags
+  const hmacKey = globalThis.crypto.getRandomValues(new Uint8Array(32));
+  const hmacTags = generateHmacTags(statements, hmacKey, indexResult.salt);
+
+  // Encrypt HMAC key for recipients
+  const disclosureMap = new Map<string, number[] | "all">();
+  disclosureMap.set("alice", [0, 1, 2, 3]);
+  disclosureMap.set("bob", mandatoryIndices);
+  const recipientKeys = new Map<string, Uint8Array>();
+  recipientKeys.set("alice", alice.x25519Public);
+  recipientKeys.set("bob", bob.x25519Public);
+  const publisherX25519 = ed25519PublicToX25519(key1.publicKey);
+  const hmacDistribution = await encryptHmacKeyForRecipients(hmacKey, recipientKeys, disclosureMap, publisherX25519);
+  hmacKey.fill(0);
+
+  // Build SD content blob
+  const mandatoryNQuads = mandatoryIndices.map(i => statements[i]);
+  const sdContentBlob = stableStringify({
+    mandatoryNQuads,
+    statementIndex: indexResult.statementHashes.map(h => bytesToHex(h)),
+    hmacTags: hmacTags.map(t => bytesToHex(t)),
+  });
+  const sdContentBytes = new TextEncoder().encode(sdContentBlob);
+  const sdContentHash = await crypto.hash(sdContentBytes);
+
+  // Index root
+  const indexRootBytes = new Uint8Array(await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    indexResult.statementHashes.reduce((acc, h) => {
+      const merged = new Uint8Array(acc.length + h.length);
+      merged.set(acc); merged.set(h, acc.length);
+      return merged;
+    }, new Uint8Array(0)),
+  ));
+  const indexRoot = "sha256:" + bytesToHex(indexRootBytes);
+
+  const unsigned = buildUnsignedManifest({
+    id: `hiri://${authority}/data/sd-person`,
+    version: "1",
+    branch: "main",
+    created: "2025-01-15T00:00:00Z",
+    contentHash: sdContentHash,
+    contentFormat: "application/json",
+    contentSize: sdContentBytes.length,
+    addressing: "raw-sha256",
+    canonicalization: "JCS",
+  });
+
+  (unsigned as Record<string, unknown>)["hiri:privacy"] = {
+    mode: "selective-disclosure",
+    parameters: {
+      disclosureProofSuite: "hiri-hmac-sd-2026",
+      statementCount: statements.length,
+      indexSalt: bytesToBase64url(indexResult.salt),
+      indexRoot,
+      mandatoryStatements: mandatoryIndices,
+      hmacKeyRecipients: hmacDistribution,
+    },
+  };
+
+  const signed = await signManifest(unsigned, key1, "2025-01-15T00:00:00Z", "JCS", crypto);
+  const manifestHash = await hashManifest(signed, crypto);
+  await demoState.storage.put(manifestHash, new TextEncoder().encode(stableStringify(signed)));
+  await demoState.storage.put(sdContentHash, sdContentBytes);
+
+  demoState.manifests.push({
+    manifest: signed,
+    manifestHash,
+    contentBytes: sdContentBytes,
+    contentHash: sdContentHash,
+    version: "1",
+  });
+}
+
+// ── Preset: Anonymous Whistleblower ────────────────────────────────────
+
+async function loadPrivacyAnonWhistleblower(): Promise<void> {
+  demoState.clear();
+
+  // Generate an ephemeral authority (anonymous)
+  const ephemeral = await generateEphemeralAuthority();
+  const keypair = { publicKey: ephemeral.publicKey, privateKey: ephemeral.privateKey, keyId: ephemeral.keyId, algorithm: "ed25519" as const };
+  const authority = ephemeral.authority;
+  demoState.keypairs.push({ keypair, keyId: ephemeral.keyId, authority });
+  demoState.authority = authority;
+  demoState.ephemeralKeypairs.push({
+    publicKey: ephemeral.publicKey,
+    privateKey: ephemeral.privateKey,
+    authority,
+  });
+  demoState.initialized = true;
+
+  const contentStr = '{"whistleblower_report":true,"finding":"Unauthorized data sharing","severity":"critical"}';
+  const contentBytes = new TextEncoder().encode(contentStr);
+  const contentHash = await crypto.hash(contentBytes);
+
+  const unsigned = buildUnsignedManifest({
+    id: `hiri://${authority}/data/report`,
+    version: "1",
+    branch: "main",
+    created: "2025-01-15T00:00:00Z",
+    contentHash,
+    contentFormat: "application/json",
+    contentSize: contentBytes.length,
+    addressing: "raw-sha256",
+    canonicalization: "JCS",
+  });
+
+  const anonBlock = buildAnonymousPrivacyBlock({
+    authorityType: "ephemeral",
+    contentVisibility: "public",
+    identityDisclosable: false,
+  });
+  (unsigned as Record<string, unknown>)["hiri:privacy"] = anonBlock;
+
+  const signed = await signManifest(unsigned, keypair, "2025-01-15T00:00:00Z", "JCS", crypto);
+  // Destroy private key
+  keypair.privateKey.fill(0);
+
+  const manifestHash = await hashManifest(signed, crypto);
+  await demoState.storage.put(manifestHash, new TextEncoder().encode(stableStringify(signed)));
+  await demoState.storage.put(contentHash, contentBytes);
+
+  demoState.manifests.push({
+    manifest: signed,
+    manifestHash,
+    contentBytes,
+    contentHash,
+    version: "1",
+  });
+}
+
+// ── Preset: Security Clearance Attestation ─────────────────────────────
+
+async function loadPrivacyAttestation(): Promise<void> {
+  demoState.clear();
+
+  // Attestor keypair
+  const attestorKey = await generateKeypair("attestor-1");
+  const attestorAuthority = deriveAuthority(attestorKey.publicKey, attestorKey.algorithm);
+  demoState.keypairs.push({ keypair: attestorKey, keyId: attestorKey.keyId, authority: attestorAuthority });
+  demoState.authority = attestorAuthority;
+  demoState.initialized = true;
+
+  // Subject keypair
+  const subjectKey = await generateKeypair("subject-1");
+  const subjectAuthority = deriveAuthority(subjectKey.publicKey, subjectKey.algorithm);
+  demoState.keypairs.push({ keypair: subjectKey, keyId: subjectKey.keyId, authority: subjectAuthority });
+
+  // Build subject manifest
+  const subjectContent = new TextEncoder().encode('{"name":"Dana Reeves","clearance":"TS/SCI"}');
+  const subjectContentHash = await crypto.hash(subjectContent);
+  const subjectUnsigned = buildUnsignedManifest({
+    id: `hiri://${subjectAuthority}/data/person`,
+    version: "1",
+    branch: "main",
+    created: "2025-01-15T00:00:00Z",
+    contentHash: subjectContentHash,
+    contentFormat: "application/json",
+    contentSize: subjectContent.length,
+    addressing: "raw-sha256",
+    canonicalization: "JCS",
+  });
+  const subjectSigned = await signManifest(subjectUnsigned, subjectKey, "2025-01-15T00:00:00Z", "JCS", crypto);
+  const subjectManifestHash = await hashManifest(subjectSigned, crypto);
+  await demoState.storage.put(subjectManifestHash, new TextEncoder().encode(stableStringify(subjectSigned)));
+  await demoState.storage.put(subjectContentHash, subjectContent);
+
+  // Build attestation manifest
+  const attestationUnsigned = buildAttestationManifest({
+    attestorAuthority,
+    attestationId: "clearance-check-1",
+    subject: {
+      authority: subjectAuthority,
+      manifestHash: subjectManifestHash,
+      contentHash: subjectContentHash,
+      manifestVersion: "1",
+    },
+    claim: {
+      "@type": "hiri:PropertyAttestation",
+      property: "security-clearance-valid",
+      value: true,
+      scope: "TS/SCI",
+      attestedAt: "2025-02-01T00:00:00Z",
+      validUntil: "2027-03-07T00:00:00Z",
+    },
+    evidence: {
+      method: "direct-examination",
+      description: "Examined personnel security record and verified clearance status",
+    },
+    version: "1",
+    timestamp: "2025-02-01T00:00:00Z",
+  });
+  const attestSigned = await signAttestationManifest(attestationUnsigned, attestorKey, "2025-02-01T00:00:00Z", crypto);
+  const attestManifestHash = await hashManifest(attestSigned as unknown as ResolutionManifest, crypto);
+  await demoState.storage.put(attestManifestHash, new TextEncoder().encode(stableStringify(attestSigned as unknown as Record<string, unknown>)));
+
+  demoState.manifests.push({
+    manifest: subjectSigned,
+    manifestHash: subjectManifestHash,
+    contentBytes: subjectContent,
+    contentHash: subjectContentHash,
+    version: "1",
+  });
+}
+
+// ── Preset: Privacy Lifecycle (PoP → Encrypted → Public) ──────────────
+
+async function loadPrivacyLifecycle(): Promise<void> {
+  demoState.clear();
+
+  const key1 = await generateKeypair("key-1");
+  const authority = deriveAuthority(key1.publicKey, key1.algorithm);
+  demoState.keypairs.push({ keypair: key1, keyId: key1.keyId, authority });
+  demoState.authority = authority;
+  demoState.initialized = true;
+
+  // Alice recipient for V2 (encrypted)
+  const alice = { id: "alice", ...generateX25519Keypair() };
+  demoState.privacyRecipients = [
+    { id: alice.id, x25519Public: alice.x25519Public, x25519Private: alice.x25519Private },
+  ];
+
+  // Shared plaintext across all versions
+  const plaintextStr = '{"name":"Dana Reeves","clearance":"TS/SCI"}';
+  const plaintextBytes = new TextEncoder().encode(plaintextStr);
+  const plaintextHash = await crypto.hash(plaintextBytes);
+
+  // V1: Proof of Possession (content hash = plaintext hash, content NOT stored)
+  const v1Unsigned = buildUnsignedManifest({
+    id: `hiri://${authority}/data/person`,
+    version: "1",
+    branch: "main",
+    created: "2025-01-15T00:00:00Z",
+    contentHash: plaintextHash,
+    contentFormat: "application/json",
+    contentSize: plaintextBytes.length,
+    addressing: "raw-sha256",
+    canonicalization: "JCS",
+  });
+  (v1Unsigned as Record<string, unknown>)["hiri:privacy"] = {
+    mode: "proof-of-possession",
+    parameters: { refreshPolicy: "P30D" },
+  };
+  const v1Signed = await signManifest(v1Unsigned, key1, "2025-01-15T00:00:00Z", "JCS", crypto);
+  const v1Hash = await hashManifest(v1Signed, crypto);
+  await demoState.storage.put(v1Hash, new TextEncoder().encode(stableStringify(v1Signed)));
+
+  demoState.manifests.push({
+    manifest: v1Signed,
+    manifestHash: v1Hash,
+    contentBytes: plaintextBytes,
+    contentHash: plaintextHash,
+    version: "1",
+  });
+
+  // V2: Encrypted (content hash = ciphertext hash, plaintext hash in privacy block)
+  const recipientKeys = new Map<string, Uint8Array>();
+  recipientKeys.set("alice", alice.x25519Public);
+  const encResult = await encryptContent(plaintextBytes, recipientKeys, crypto);
+
+  const v2Unsigned = buildEncryptedManifest({
+    baseManifestParams: {
+      id: `hiri://${authority}/data/person`,
+      version: "2",
+      branch: "main",
+      created: "2025-04-15T00:00:00Z",
+      addressing: "raw-sha256",
+      canonicalization: "JCS",
+      chain: { previous: v1Hash, depth: 2, genesisHash: v1Hash },
+    },
+    encryptionResult: encResult,
+    plaintextFormat: "application/json",
+    plaintextSize: plaintextBytes.length,
+  });
+
+  const v2Signed = await signManifest(v2Unsigned, key1, "2025-04-15T00:00:00Z", "JCS", crypto);
+  const v2Hash = await hashManifest(v2Signed, crypto);
+  await demoState.storage.put(v2Hash, new TextEncoder().encode(stableStringify(v2Signed)));
+  await demoState.storage.put(v2Signed["hiri:content"].hash, encResult.ciphertext);
+
+  demoState.manifests.push({
+    manifest: v2Signed,
+    manifestHash: v2Hash,
+    contentBytes: encResult.ciphertext,
+    contentHash: v2Signed["hiri:content"].hash,
+    version: "2",
+  });
+
+  // V3: Public (content hash = plaintext hash again, content stored)
+  const v3Unsigned = buildUnsignedManifest({
+    id: `hiri://${authority}/data/person`,
+    version: "3",
+    branch: "main",
+    created: "2025-07-15T00:00:00Z",
+    contentHash: plaintextHash,
+    contentFormat: "application/json",
+    contentSize: plaintextBytes.length,
+    addressing: "raw-sha256",
+    canonicalization: "JCS",
+    chain: { previous: v2Hash, depth: 3, genesisHash: v1Hash },
+  });
+
+  const v3Signed = await signManifest(v3Unsigned, key1, "2025-07-15T00:00:00Z", "JCS", crypto);
+  const v3Hash = await hashManifest(v3Signed, crypto);
+  await demoState.storage.put(v3Hash, new TextEncoder().encode(stableStringify(v3Signed)));
+  await demoState.storage.put(plaintextHash, plaintextBytes);
+
+  demoState.manifests.push({
+    manifest: v3Signed,
+    manifestHash: v3Hash,
+    contentBytes: plaintextBytes,
+    contentHash: plaintextHash,
+    version: "3",
+  });
+}
+
+// ── Preset: Key Rotation + Encrypted ───────────────────────────────────
+
+async function loadPrivacyKeyRotationEnc(): Promise<void> {
+  demoState.clear();
+
+  // Key 1
+  const key1 = await generateKeypair("key-1");
+  const authority = deriveAuthority(key1.publicKey, key1.algorithm);
+  demoState.keypairs.push({ keypair: key1, keyId: key1.keyId, authority });
+  demoState.authority = authority;
+  demoState.initialized = true;
+
+  // Key 2
+  const key2 = await generateKeypair("key-2");
+  demoState.keypairs.push({ keypair: key2, keyId: key2.keyId, authority });
+
+  // Key Document with rotation
+  const keyDoc = buildKeyDocument({
+    authority,
+    authorityType: "ed25519",
+    version: "2",
+    activeKeys: [{
+      id: key2.keyId,
+      type: "Ed25519VerificationKey2020",
+      publicKeyMultibase: `z${base58Encode(key2.publicKey)}`,
+    }],
+    rotatedKeys: [{
+      id: key1.keyId,
+      type: "Ed25519VerificationKey2020",
+      publicKeyMultibase: `z${base58Encode(key1.publicKey)}`,
+      rotatedAt: "2025-06-01T00:00:00Z",
+      gracePeriod: "P180D",
+    }],
+    revokedKeys: [],
+    policies: { maxGracePeriod: "P365D" },
+  });
+  const signedKeyDoc = await signKeyDocument(keyDoc, key2, "2025-06-01T00:00:00Z", "JCS", crypto);
+  demoState.keyDocument = signedKeyDoc;
+
+  // Recipient
+  const alice = { id: "alice", ...generateX25519Keypair() };
+  demoState.privacyRecipients = [
+    { id: alice.id, x25519Public: alice.x25519Public, x25519Private: alice.x25519Private },
+  ];
+
+  // V1: Public, signed by key1
+  const contentStr = '{"name":"Dana Reeves","clearance":"TS/SCI"}';
+  const contentBytes = new TextEncoder().encode(contentStr);
+  const contentHash = await crypto.hash(contentBytes);
+
+  const v1Unsigned = buildUnsignedManifest({
+    id: `hiri://${authority}/data/person`,
+    version: "1",
+    branch: "main",
+    created: "2025-01-15T00:00:00Z",
+    contentHash,
+    contentFormat: "application/json",
+    contentSize: contentBytes.length,
+    addressing: "raw-sha256",
+    canonicalization: "JCS",
+  });
+  const v1Signed = await signManifest(v1Unsigned, key1, "2025-01-15T00:00:00Z", "JCS", crypto);
+  const v1Hash = await hashManifest(v1Signed, crypto);
+  await demoState.storage.put(v1Hash, new TextEncoder().encode(stableStringify(v1Signed)));
+  await demoState.storage.put(contentHash, contentBytes);
+
+  demoState.manifests.push({
+    manifest: v1Signed,
+    manifestHash: v1Hash,
+    contentBytes,
+    contentHash,
+    version: "1",
+  });
+
+  // V2: Encrypted, signed by key2 (after rotation)
+  const recipientKeys = new Map<string, Uint8Array>();
+  recipientKeys.set("alice", alice.x25519Public);
+  const encResult = await encryptContent(contentBytes, recipientKeys, crypto);
+
+  const v2Unsigned = buildEncryptedManifest({
+    baseManifestParams: {
+      id: `hiri://${authority}/data/person`,
+      version: "2",
+      branch: "main",
+      created: "2025-07-01T00:00:00Z",
+      addressing: "raw-sha256",
+      canonicalization: "JCS",
+      chain: { previous: v1Hash, depth: 2, genesisHash: v1Hash },
+    },
+    encryptionResult: encResult,
+    plaintextFormat: "application/json",
+    plaintextSize: contentBytes.length,
+  });
+  const v2Signed = await signManifest(v2Unsigned, key2, "2025-07-01T00:00:00Z", "JCS", crypto);
+  const v2Hash = await hashManifest(v2Signed, crypto);
+  await demoState.storage.put(v2Hash, new TextEncoder().encode(stableStringify(v2Signed)));
+  await demoState.storage.put(v2Signed["hiri:content"].hash, encResult.ciphertext);
+
+  demoState.manifests.push({
+    manifest: v2Signed,
+    manifestHash: v2Hash,
+    contentBytes: encResult.ciphertext,
+    contentHash: v2Signed["hiri:content"].hash,
+    version: "2",
+  });
+}
+
 // ── Public API ─────────────────────────────────────────────────────────
 
 export async function loadPreset(name: string): Promise<void> {
@@ -518,6 +1095,27 @@ export async function loadPreset(name: string): Promise<void> {
       break;
     case "level-2":
       await loadLevel2Demo();
+      break;
+    case "privacy-pop":
+      await loadPrivacyPoP();
+      break;
+    case "privacy-encrypted":
+      await loadPrivacyEncrypted();
+      break;
+    case "privacy-sd":
+      await loadPrivacySD();
+      break;
+    case "privacy-anon-whistleblower":
+      await loadPrivacyAnonWhistleblower();
+      break;
+    case "privacy-attestation":
+      await loadPrivacyAttestation();
+      break;
+    case "privacy-lifecycle":
+      await loadPrivacyLifecycle();
+      break;
+    case "privacy-key-rotation-enc":
+      await loadPrivacyKeyRotationEnc();
       break;
     default:
       console.warn("Unknown preset:", name);

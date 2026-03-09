@@ -486,6 +486,15 @@
         <option value="chain-delta">Chain with Delta (M1-M4)</option>
         <option value="key-rotation">Key Rotation (M1-M5)</option>
         <option value="level-2">Level 2: URDNA2015 + CIDv1 (M7-M8)</option>
+        <optgroup label="Privacy Modes">
+          <option value="privacy-pop">Proof of Possession (§6)</option>
+          <option value="privacy-encrypted">Encrypted Distribution (§7)</option>
+          <option value="privacy-sd">Selective Disclosure (§8)</option>
+          <option value="privacy-anon">Anonymous Whistleblower (§9)</option>
+          <option value="privacy-attestation">Third-Party Attestation (§10)</option>
+          <option value="privacy-lifecycle">Privacy Lifecycle Chain (§11)</option>
+          <option value="privacy-key-rotation-enc">Key Rotation + Encryption</option>
+        </optgroup>
       </select>
       <span id="presetIndicator" style="font-size:0.75rem;color:var(--text-muted);display:none"></span>
     </div>
@@ -659,9 +668,23 @@
           "chain-delta": "Chain with Delta",
           "key-rotation": "Key Rotation",
           "level-2": "Level 2: URDNA2015 + CIDv1",
+          "privacy-pop": "Proof of Possession",
+          "privacy-encrypted": "Encrypted Distribution",
+          "privacy-sd": "Selective Disclosure",
+          "privacy-anon": "Anonymous Whistleblower",
+          "privacy-attestation": "Third-Party Attestation",
+          "privacy-lifecycle": "Privacy Lifecycle Chain",
+          "privacy-key-rotation-enc": "Key Rotation + Encryption",
         };
         indicator.textContent = "Loaded: " + (labels[preset] || preset);
         indicator.style.display = "inline";
+        // Switch to the relevant tab for the preset
+        const targetTab = preset.startsWith("privacy-") ? "privacy" : "keys";
+        tabBtns.forEach(b => b.classList.remove("active"));
+        workspaces.forEach(w => w.classList.remove("active"));
+        const targetBtn = document.querySelector(`.tab-btn[data-tab="${targetTab}"]`);
+        if (targetBtn) targetBtn.classList.add("active");
+        document.getElementById("tab-" + targetTab).classList.add("active");
         e.target.value = "";
       });
 
