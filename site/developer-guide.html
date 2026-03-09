@@ -290,6 +290,16 @@
     <a href="#step5-keys">5. Key Lifecycle</a>
     <a href="#step6-query">6. RDF &amp; SPARQL</a>
 
+    <h3>Privacy Extension</h3>
+    <a href="#privacy-overview">Overview</a>
+    <a href="#privacy-modes">Mode Decision Tree</a>
+    <a href="#privacy-encrypted">Encrypted Distribution</a>
+    <a href="#privacy-sd">Selective Disclosure</a>
+    <a href="#privacy-anon">Anonymous Publication</a>
+    <a href="#privacy-attest">Attestation</a>
+    <a href="#privacy-chains">Cross-Mode Chains</a>
+    <a href="#privacy-mistakes">Common Mistakes</a>
+
     <h3>Reference</h3>
     <a href="#api-manifest">Manifest API</a>
     <a href="#api-signing">Signing API</a>
@@ -297,6 +307,7 @@
     <a href="#api-resolve">Resolution API</a>
     <a href="#api-keys">Key Lifecycle API</a>
     <a href="#api-query">Query API</a>
+    <a href="#api-privacy">Privacy API</a>
     <a href="#types">Core Types</a>
     <a href="#constraints">Design Constraints</a>
   </aside>
@@ -730,6 +741,386 @@ const mode = resolveEntailmentMode(manifest["hiri:semantics"]);
 // "none" (default) | "materialized" | "runtime"</code></pre>
 
     <!-- ═══════════════════════════════════════════ -->
+    <!--          PRIVACY EXTENSION                  -->
+    <!-- ═══════════════════════════════════════════ -->
+
+    <h2 id="privacy-overview">Privacy Extension: Overview</h2>
+
+    <p>
+      The privacy extension adds five modes that control content visibility and identity linkability.
+      Every privacy-aware resolution goes through a single entry point:
+    </p>
+
+    <pre><code>import { resolveWithPrivacy } from "hiri/privacy/resolve.js";
+
+const result = await resolveWithPrivacy(uri, storage, {
+  crypto,
+  publicKey,
+  manifestHash,
+  // Optional, mode-dependent:
+  decryptionKey,       // X25519 private key (Mode 2, Mode 3)
+  recipientId,         // Your recipient identifier (Mode 2, Mode 3)
+  subjectPublicKey,    // Subject authority's key (Mode 5)
+  attestorKeyStatus,   // "active" | "revoked" (Mode 5)
+  verificationTime,    // ISO 8601 timestamp for staleness checks
+});</code></pre>
+
+    <p>The result always contains:</p>
+
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>verified</code></td><td><code>boolean</code></td><td>Signature + chain integrity</td></tr>
+      <tr><td><code>privacyMode</code></td><td><code>string</code></td><td>"public" | "proof-of-possession" | "encrypted" | "selective-disclosure" | "anonymous" | "attestation"</td></tr>
+      <tr><td><code>contentStatus</code></td><td><code>string</code></td><td>Mode-specific content verification outcome</td></tr>
+      <tr><td><code>warnings</code></td><td><code>string[]</code></td><td>Staleness, key status, verification notes</td></tr>
+      <tr><td><code>identityType?</code></td><td><code>string</code></td><td>For anonymous: "anonymous-ephemeral" | "pseudonymous"</td></tr>
+      <tr><td><code>decryptedContent?</code></td><td><code>Uint8Array</code></td><td>Mode 2 with valid key</td></tr>
+      <tr><td><code>disclosedNQuads?</code></td><td><code>string[]</code></td><td>Mode 3 mandatory statements</td></tr>
+      <tr><td><code>attestationResult?</code></td><td><code>object</code></td><td>Mode 5 trust level and claim</td></tr>
+    </table>
+
+    <div class="callout">
+      <strong>Single entry point:</strong> A developer who reads only the <code>resolveWithPrivacy()</code>
+      signature and result type can integrate privacy-aware resolution without understanding the
+      internals. Every other section below is "how to build the manifests that resolver consumes."
+    </div>
+
+    <!-- ───────────────── MODE DECISION TREE ───────────────── -->
+
+    <h2 id="privacy-modes">Mode Decision Tree</h2>
+
+    <div class="diagram">Does the content need to exist publicly?
+├── Yes &rarr; Mode: public (no privacy block needed)
+└── No
+    ├── Prove you HAVE the data without revealing it?
+    │   └── Yes &rarr; Mode 1: Proof of Possession (§6)
+    │
+    ├── Specific recipients read the full content?
+    │   └── Yes &rarr; Mode 2: Encrypted Distribution (§7)
+    │
+    ├── Recipients see SOME statements but not others?
+    │   └── Yes &rarr; Mode 3: Selective Disclosure (§8)
+    │
+    ├── Publisher's identity hidden?
+    │   └── Yes &rarr; Mode 4: Anonymous Publication (§9)
+    │       └── Combined with any content visibility
+    │
+    └── Third party vouches for a property?
+        └── Yes &rarr; Mode 5: Third-Party Attestation (§10)</div>
+
+    <p>
+      Modes 1&ndash;3 control <strong>content visibility</strong>. Mode 4 controls <strong>identity
+      visibility</strong>. Mode 5 enables <strong>cross-authority trust</strong>. Modes compose:
+      an anonymous publisher (Mode 4) can use selective disclosure (Mode 3) for content &mdash;
+      the "anonymous whistleblower" use case (§4.6).
+    </p>
+
+    <!-- ───────────────── ENCRYPTED DISTRIBUTION ───────────────── -->
+
+    <h2 id="privacy-encrypted">Encrypted Distribution (Mode 2)</h2>
+
+    <h3>The Dual Hash Model</h3>
+
+    <p>Encrypted manifests have two hashes:</p>
+
+    <div class="diagram">manifest["hiri:content"].hash                    &rarr; ciphertext hash (public)
+manifest["hiri:privacy"].parameters.plaintextHash &rarr; plaintext hash (in privacy block)</div>
+
+    <p>
+      Storage adapters use the ciphertext hash for content-addressed lookup. The plaintext hash
+      is what <code>getLogicalPlaintextHash()</code> returns for chain walking.
+    </p>
+
+    <pre><code>import { encryptContent } from "hiri/privacy/encryption.js";
+import { buildEncryptedManifest } from "hiri/privacy/encrypted-manifest.js";
+
+// Encrypt for multiple recipients
+const encResult = await encryptContent(
+  plaintextBytes,
+  new Map([["alice", alice.publicKey], ["bob", bob.publicKey]]),
+  crypto,
+);
+
+// Build the manifest (content.hash = ciphertext hash)
+const manifest = buildEncryptedManifest({
+  baseManifestParams: { id, version, branch, created, addressing, canonicalization },
+  encryptionResult: encResult,
+  plaintextFormat: "application/ld+json",
+  plaintextSize: plaintextBytes.length,
+});</code></pre>
+
+    <p>Three possible resolution outcomes:</p>
+
+    <table>
+      <tr><th>Scenario</th><th><code>contentStatus</code></th><th><code>verified</code></th></tr>
+      <tr><td>No decryption key provided</td><td><code>"ciphertext-verified"</code></td><td><code>true</code></td></tr>
+      <tr><td>Valid recipient key</td><td><code>"decrypted-verified"</code></td><td><code>true</code></td></tr>
+      <tr><td>Wrong key / not a recipient</td><td><code>"decryption-failed"</code></td><td><code>true</code></td></tr>
+    </table>
+
+    <div class="callout warning">
+      <strong><code>verified</code> is <code>true</code> in ALL cases.</strong> Signature verification
+      and content decryption are orthogonal. A manifest with a valid signature but a failed decryption
+      is still a verified manifest &mdash; you just can't read the content.
+    </div>
+
+    <h3>HKDF Domain Separation</h3>
+
+    <p>
+      Mode 2 uses HKDF label <code>"hiri-cek-v1.1"</code> for CEK distribution.
+      Mode 3 uses <code>"hiri-hmac-v1.1"</code> for HMAC key distribution.
+      These labels MUST differ &mdash; same ECDH shared secret, different derived keys.
+      Wrong label = AES-GCM authentication failure.
+    </p>
+
+    <!-- ───────────────── SELECTIVE DISCLOSURE ───────────────── -->
+
+    <h2 id="privacy-sd">Selective Disclosure (Mode 3)</h2>
+
+    <p>
+      Selective disclosure canonicalizes JSON-LD into individual N-Quad statements,
+      then discloses some publicly while withholding others. Each statement gets a
+      salted SHA-256 hash (in the statement index) and an HMAC-SHA-256 tag (for
+      authorized verification).
+    </p>
+
+    <pre><code>import { buildStatementIndex } from "hiri/privacy/statement-index.js";
+import { generateHmacTags, encryptHmacKeyForRecipients } from "hiri/privacy/hmac-disclosure.js";
+
+// Build index from canonical N-Quads
+const indexResult = await buildStatementIndex(canonicalNQuads);
+
+// Generate HMAC tags
+const hmacKey = crypto.getRandomValues(new Uint8Array(32));
+const tags = generateHmacTags(statements, hmacKey, indexResult.indexSalt);
+
+// Encrypt HMAC key for recipients (auto-generates ephemeral keypair + IV)
+const distribution = await encryptHmacKeyForRecipients(
+  hmacKey, recipientPublicKeys, disclosureMap,
+);
+hmacKey.fill(0);</code></pre>
+
+    <h3>The Byte-Level Concatenation Rule (CRITICAL)</h3>
+
+    <div class="callout warning">
+      <strong>This is the #1 interoperability failure mode.</strong> The wrong approach produces
+      valid SHA-256 hashes that pass all local tests but fail against any other implementation.
+    </div>
+
+    <p>The spec (§8.4.2) requires:</p>
+    <pre><code>statementHash[i] = SHA-256(concat(rawSaltBytes, UTF-8(statement)))</code></pre>
+
+    <p>This is <strong>byte-level concatenation</strong> of two <code>Uint8Array</code> values. NOT string concatenation.</p>
+
+    <pre><code>// CORRECT: byte-level concat
+const stmtBytes = new TextEncoder().encode(statement);
+const input = new Uint8Array(salt.length + stmtBytes.length);
+input.set(salt, 0);
+input.set(stmtBytes, salt.length);
+const hash = await crypto.subtle.digest("SHA-256", input);
+
+// WRONG: string concat (produces different hash!)
+const saltB64 = base64urlEncode(salt);
+const input = new TextEncoder().encode(saltB64 + statement);  // ← DIFFERENT BYTES
+const hash = await crypto.subtle.digest("SHA-256", input);</code></pre>
+
+    <h3>HMAC Verification Boundary</h3>
+
+    <p>
+      The published SD content blob only contains mandatory N-Quad strings. Non-mandatory
+      statement text is not stored publicly. This creates a verification boundary:
+    </p>
+
+    <ul>
+      <li><strong>Mandatory statements:</strong> Verifiable by anyone. Text is in the published blob.</li>
+      <li><strong>Non-mandatory disclosed statements:</strong> Authorized by HMAC key decryption,
+        but tag verification requires out-of-band statement delivery.</li>
+    </ul>
+
+    <pre><code>// CORRECT: only verify statements whose text is available
+for (const idx of disclosedIndices) {
+  const mandatoryPos = mandatoryStatements.indexOf(idx);
+  if (mandatoryPos !== -1) {
+    // Text available — verify HMAC tag
+    verifyHmacTag(mandatoryNQuads[mandatoryPos], hmacKey, salt, tags[idx]);
+  }
+  // Non-mandatory: HMAC key decryption proves authorization.
+  // Tag verification requires out-of-band statement delivery.
+}</code></pre>
+
+    <h3>Serialization at the JSON Boundary</h3>
+
+    <p>
+      <code>encryptHmacKeyForRecipients()</code> returns <code>Uint8Array</code> fields
+      (<code>ephemeralPublicKey</code>, <code>iv</code>, <code>encryptedHmacKey</code>).
+      The manifest's privacy block is JSON-serialized for storage. <code>Uint8Array</code>
+      serializes as <code>{"0":1,"1":2,...}</code> &mdash; not a hex string.
+      Convert all binary fields to hex before embedding:
+    </p>
+
+    <pre><code>// WRONG: raw Uint8Array won't survive JSON round-trip
+parameters.hmacKeyRecipients = distribution;
+
+// CORRECT: convert to hex strings matching HmacKeyRecipients interface
+parameters.hmacKeyRecipients = {
+  ephemeralPublicKey: bytesToHex(distribution.ephemeralPublicKey),
+  iv: bytesToHex(distribution.iv),
+  keyAgreement: "X25519-HKDF-SHA256",
+  recipients: distribution.recipients.map(r =&gt; ({
+    id: r.id,
+    encryptedHmacKey: bytesToHex(r.encryptedHmacKey),
+    disclosedStatements: r.disclosedStatements,
+  })),
+};</code></pre>
+
+    <!-- ───────────────── ANONYMOUS ───────────────── -->
+
+    <h2 id="privacy-anon">Anonymous Publication (Mode 4)</h2>
+
+    <p>
+      Anonymous publication separates identity from content. Two authority types:
+    </p>
+
+    <table>
+      <tr><th>Type</th><th>Linkability</th><th>Key Lifecycle</th><th>Private Key</th></tr>
+      <tr><td><strong>Ephemeral</strong></td><td>Computationally unlinkable</td><td>No KeyDocument (§9.5)</td><td>Destroyed after signing</td></tr>
+      <tr><td><strong>Pseudonymous</strong></td><td>Linkable (same authority)</td><td>Optional KeyDocument</td><td>Retained for reuse</td></tr>
+    </table>
+
+    <pre><code>import { generateEphemeralAuthority } from "hiri/privacy/anonymous.js";
+
+const eph = await generateEphemeralAuthority();
+const signed = await signManifest(manifest, ephSigningKey, created, "JCS", crypto);
+
+// MUST destroy the private key after signing
+eph.privateKey.fill(0);</code></pre>
+
+    <p>
+      Anonymous publication combines with any content visibility mode via the
+      <code>contentVisibility</code> parameter: <code>"public"</code>,
+      <code>"encrypted"</code>, <code>"selective-disclosure"</code>, or
+      <code>"private"</code> (PoP).
+    </p>
+
+    <!-- ───────────────── ATTESTATION ───────────────── -->
+
+    <h2 id="privacy-attest">Third-Party Attestation (Mode 5)</h2>
+
+    <p>
+      Attestation lets an examiner (attestor) vouch for a property of content held by another
+      authority (subject). The attestation IS the manifest &mdash; there is no separate content block.
+    </p>
+
+    <pre><code>import { buildAttestationManifest, verifyAttestation } from "hiri/privacy/attestation.js";
+
+const attestation = buildAttestationManifest({
+  attestorAuthority,
+  attestationId: "clearance-check-001",
+  subject: { authority: subjectAuthority, manifestHash, contentHash },
+  claim: { property: "security-clearance-valid", value: true, scope: "TS/SCI" },
+  evidence: { method: "direct-examination", description: "..." },
+});
+// attestation has NO hiri:content block (§10.4)</code></pre>
+
+    <h3>Trust Levels</h3>
+
+    <table>
+      <tr><th>Scenario</th><th><code>trustLevel</code></th><th>Meaning</th></tr>
+      <tr><td>Both signatures verified, attestor key active</td><td><code>"full"</code></td><td>Maximum assurance</td></tr>
+      <tr><td>Attestor verified, subject unavailable</td><td><code>"partial"</code></td><td>Trust the attestor's word</td></tr>
+      <tr><td>Attestor key revoked AND subject unavailable</td><td><code>"unverifiable"</code></td><td>No independent verification</td></tr>
+    </table>
+
+    <p>
+      Trust level is informational &mdash; the resolver reports it, the application decides
+      what to do with it. Stale attestations (past <code>validUntil</code>) are not invalid;
+      the claim was true when made.
+    </p>
+
+    <!-- ───────────────── CROSS-MODE CHAINS ───────────────── -->
+
+    <h2 id="privacy-chains">Cross-Mode Chains (Level 3)</h2>
+
+    <p>
+      Content can transition between privacy modes across versions. Transitions MUST be
+      monotonically decreasing in privacy:
+    </p>
+
+    <div class="diagram">proof-of-possession &rarr; encrypted             ✓ (sharing with recipients)
+proof-of-possession &rarr; public                ✓ (full publication)
+encrypted           &rarr; public                ✓ (declassification)
+encrypted           &rarr; proof-of-possession   ✗ (cannot withdraw access)
+public              &rarr; anything private      ✗ (cannot unpublish)</div>
+
+    <p>
+      Raw <code>content.hash</code> comparison across a PoP &rarr; Encrypted transition FAILS
+      because V1's hash is the plaintext hash and V2's hash is the ciphertext hash. Use
+      <code>getLogicalPlaintextHash()</code> for all cross-version content comparisons:
+    </p>
+
+    <div class="diagram">V1: Proof of Possession     content.hash = sha256:aaa   getLogicalPlaintextHash() &rarr; sha256:aaa
+V2: Encrypted Distribution  content.hash = sha256:bbb   getLogicalPlaintextHash() &rarr; sha256:aaa
+V3: Public                  content.hash = sha256:aaa   getLogicalPlaintextHash() &rarr; sha256:aaa
+
+Raw content.hash V1&rarr;V2: aaa ≠ bbb  FAILS
+Logical hash V1&rarr;V2:     aaa = aaa  SUCCEEDS</div>
+
+    <!-- ───────────────── COMMON MISTAKES ───────────────── -->
+
+    <h2 id="privacy-mistakes">Common Privacy Mistakes</h2>
+
+    <p>Ordered by frequency, not by spec section. These are the bugs every implementer hits.</p>
+
+    <h3>#1 — String Concatenation Instead of Byte Concatenation</h3>
+    <p>
+      <strong>Symptom:</strong> Every salted hash and index root is wrong. Cross-implementation verification fails.<br>
+      <strong>Cause:</strong> Using <code>base64url(salt) + statement</code> as a string instead of <code>concat(rawSaltBytes, UTF-8(statement))</code> as byte arrays.<br>
+      <strong>Fix:</strong> See the byte-level concatenation rule above. Test with vector B.13.
+    </p>
+
+    <h3>#2 — Uint8Array Fields in JSON-Serialized Manifests</h3>
+    <p>
+      <strong>Symptom:</strong> <code>hexToBytes()</code> receives <code>[object Object]</code>. X25519 ECDH gets <code>length=0</code>.<br>
+      <strong>Cause:</strong> Placing raw <code>Uint8Array</code> from encryption functions directly into the manifest. After JSON round-trip, they become plain objects, not hex strings.<br>
+      <strong>Fix:</strong> Hex-encode all binary fields before embedding in <code>hiri:privacy.parameters</code>. See the serialization section above.
+    </p>
+
+    <h3>#3 — Wrong HKDF Label</h3>
+    <p>
+      <strong>Symptom:</strong> AES-GCM authentication failure when decrypting a CEK or HMAC key.<br>
+      <strong>Cause:</strong> Using <code>"hiri-cek-v1.1"</code> for Mode 3 or <code>"hiri-hmac-v1.1"</code> for Mode 2.<br>
+      <strong>Fix:</strong> Mode 2 = <code>"hiri-cek-v1.1"</code>. Mode 3 = <code>"hiri-hmac-v1.1"</code>.
+    </p>
+
+    <h3>#4 — Passing Publisher Key as IV</h3>
+    <p>
+      <strong>Symptom:</strong> <code>AES-GCM IV must be 12 bytes, got 32</code>.<br>
+      <strong>Cause:</strong> Passing a 32-byte X25519 public key as the optional <code>iv</code> parameter of <code>encryptHmacKeyForRecipients()</code>.<br>
+      <strong>Fix:</strong> Omit the 4th argument. The function generates its own ephemeral keypair and 12-byte IV internally.
+    </p>
+
+    <h3>#5 — HMAC Verification of Non-Mandatory Statements</h3>
+    <p>
+      <strong>Symptom:</strong> False HMAC tag failures for disclosed but non-mandatory statements.<br>
+      <strong>Cause:</strong> Looking up statement text in <code>mandatoryNQuads</code> using <code>indexOf(idx)</code> which returns <code>-1</code> for non-mandatory indices, producing an empty string.<br>
+      <strong>Fix:</strong> Only verify HMAC tags for mandatory statements (where text is available). See the HMAC verification boundary section above.
+    </p>
+
+    <h3>#6 — Comparing Raw content.hash Across Modes</h3>
+    <p>
+      <strong>Symptom:</strong> Chain verification fails at a PoP &rarr; Encrypted transition.<br>
+      <strong>Cause:</strong> Comparing <code>content.hash</code> directly instead of using <code>getLogicalPlaintextHash()</code>.<br>
+      <strong>Fix:</strong> Use <code>getLogicalPlaintextHash()</code> for all cross-version content comparisons.
+    </p>
+
+    <h3>#7 — Treating verified:true + decryption-failed as Error</h3>
+    <p>
+      <strong>Symptom:</strong> Application rejects a valid manifest because content couldn't be decrypted.<br>
+      <strong>Cause:</strong> Conflating signature verification with content access. They are orthogonal.<br>
+      <strong>Fix:</strong> <code>verified: true</code> = authentic manifest. <code>contentStatus: "decryption-failed"</code> = you don't have the right key.
+    </p>
+
+    <!-- ═══════════════════════════════════════════ -->
     <!--              API REFERENCE                  -->
     <!-- ═══════════════════════════════════════════ -->
 
@@ -875,6 +1266,94 @@ const mode = resolveEntailmentMode(manifest["hiri:semantics"]);
         <td><code>(sparql, index, engine) &rarr; Promise&lt;QueryResult&gt;</code></td>
         <td>Execute SPARQL query against an RDF index.</td>
       </tr>
+    </table>
+
+    <h2 id="api-privacy">API: Privacy Extension</h2>
+
+    <table>
+      <tr><th>Function</th><th>Module</th><th>Signature</th><th>Description</th></tr>
+      <tr>
+        <td><code>resolveWithPrivacy</code></td>
+        <td><code>privacy/resolve</code></td>
+        <td><code>(uri, storage, options) &rarr; Promise&lt;PrivacyAwareResult&gt;</code></td>
+        <td>Single entry point for privacy-aware resolution. Dispatches to mode-specific handlers.</td>
+      </tr>
+      <tr>
+        <td><code>encryptContent</code></td>
+        <td><code>privacy/encryption</code></td>
+        <td><code>(plaintext, recipientPubKeys, options?) &rarr; Promise&lt;EncryptedBundle&gt;</code></td>
+        <td>Encrypt content for specified recipients using X25519-HKDF-SHA256 + AES-256-GCM.</td>
+      </tr>
+      <tr>
+        <td><code>decryptContent</code></td>
+        <td><code>privacy/encryption</code></td>
+        <td><code>(bundle, ownPrivateKey, ownId) &rarr; Promise&lt;Uint8Array&gt;</code></td>
+        <td>Decrypt content using recipient's X25519 private key.</td>
+      </tr>
+      <tr>
+        <td><code>generateHmacTags</code></td>
+        <td><code>privacy/hmac-disclosure</code></td>
+        <td><code>(statements, hmacKey, indexSalt) &rarr; Uint8Array[]</code></td>
+        <td>Generate HMAC-SHA256 tags for all N-Quad statements. Input: concat(salt, UTF-8(statement)).</td>
+      </tr>
+      <tr>
+        <td><code>verifyHmacTag</code></td>
+        <td><code>privacy/hmac-disclosure</code></td>
+        <td><code>(statement, hmacKey, indexSalt, expectedTag) &rarr; boolean</code></td>
+        <td>Verify a single statement's HMAC tag using constant-time comparison.</td>
+      </tr>
+      <tr>
+        <td><code>encryptHmacKeyForRecipients</code></td>
+        <td><code>privacy/hmac-disclosure</code></td>
+        <td><code>(hmacKey, recipientPubKeys, disclosureMap, iv?) &rarr; Promise&lt;HmacKeyDistributionResult&gt;</code></td>
+        <td>Encrypt HMAC key for multiple recipients. Generates ephemeral X25519 keypair and 12-byte IV internally. HKDF label: <code>"hiri-hmac-v1.1"</code>.</td>
+      </tr>
+      <tr>
+        <td><code>decryptHmacKey</code></td>
+        <td><code>privacy/hmac-disclosure</code></td>
+        <td><code>(encryptedKey, ephemeralPubKey, iv, ownPrivKey, ownId) &rarr; Promise&lt;Uint8Array&gt;</code></td>
+        <td>Decrypt HMAC key as a recipient. HKDF label: <code>"hiri-hmac-v1.1"</code>.</td>
+      </tr>
+      <tr>
+        <td><code>generateEphemeralAuthority</code></td>
+        <td><code>privacy/anonymous</code></td>
+        <td><code>(crypto) &rarr; Promise&lt;EphemeralAuthority&gt;</code></td>
+        <td>Generate a single-use Ed25519 keypair and derive an ephemeral HIRI authority.</td>
+      </tr>
+      <tr>
+        <td><code>buildAnonymousPrivacyBlock</code></td>
+        <td><code>privacy/anonymous</code></td>
+        <td><code>(mode, linkedAuthorityHash?) &rarr; PrivacyBlock</code></td>
+        <td>Build privacy block for anonymous or pseudonymous publication.</td>
+      </tr>
+      <tr>
+        <td><code>buildAttestationManifest</code></td>
+        <td><code>privacy/attestation</code></td>
+        <td><code>(params) &rarr; UnsignedManifest</code></td>
+        <td>Build an unsigned attestation manifest referencing a target manifest.</td>
+      </tr>
+      <tr>
+        <td><code>verifyAttestation</code></td>
+        <td><code>privacy/attestation</code></td>
+        <td><code>(attestation, attesterKey, crypto) &rarr; Promise&lt;AttestationResult&gt;</code></td>
+        <td>Verify an attestation manifest's signature and cross-reference.</td>
+      </tr>
+      <tr>
+        <td><code>getLogicalPlaintextHash</code></td>
+        <td><code>privacy/cross-mode</code></td>
+        <td><code>(manifest) &rarr; string</code></td>
+        <td>Extract logical plaintext hash regardless of privacy mode. Use for cross-version content comparisons.</td>
+      </tr>
+    </table>
+
+    <p><strong>Key types:</strong></p>
+    <table>
+      <tr><th>Type</th><th>Purpose</th></tr>
+      <tr><td><code>PrivacyAwareResult</code></td><td>Resolution result: verified, privacyMode, contentStatus, content?, warnings</td></tr>
+      <tr><td><code>HmacKeyRecipients</code></td><td>Serialized HMAC key distribution block: ephemeralPublicKey (hex), iv (hex), recipients[]</td></tr>
+      <tr><td><code>SelectiveDisclosureParams</code></td><td>SD parameters: mandatoryStatements, hmacTags, indexSalt, mandatoryNQuads</td></tr>
+      <tr><td><code>EphemeralAuthority</code></td><td>Ephemeral keypair + derived authority for anonymous publication</td></tr>
+      <tr><td><code>AttestationResult</code></td><td>Attestation verification: valid, trustLevel, attesterAuthority, targetHash</td></tr>
     </table>
 
     <!-- ───────────────── TYPES ───────────────── -->
