@@ -2208,6 +2208,10 @@ Rule: Chain walkers MUST use getLogicalPlaintextHash() (§11.3),
       not raw hiri:content.hash comparison.
 ```
 
+### B.16 AES-256-GCM Zero-Byte Plaintext (v1.4.1)
+
+> **Implementation note:** AES-256-GCM encrypting zero bytes of plaintext produces a 16-byte ciphertext consisting entirely of the 128-bit authentication tag. This is correct per the GCM specification (NIST SP 800-38D). Implementations MUST NOT reject zero-length ciphertext minus tag; `ciphertext.length >= tagLength / 8` is the correct lower bound, not `ciphertext.length > plaintext.length`.
+
 ---
 
 ## Appendix C: Privacy Mode Decision Matrix

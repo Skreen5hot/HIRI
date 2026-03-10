@@ -772,7 +772,7 @@ const result = await resolveWithPrivacy(uri, storage, {
       <tr><td><code>verified</code></td><td><code>boolean</code></td><td>Signature + chain integrity</td></tr>
       <tr><td><code>privacyMode</code></td><td><code>string</code></td><td>"public" | "proof-of-possession" | "encrypted" | "selective-disclosure" | "anonymous" | "attestation"</td></tr>
       <tr><td><code>contentStatus</code></td><td><code>string</code></td><td>Mode-specific content verification outcome</td></tr>
-      <tr><td><code>warnings</code></td><td><code>string[]</code></td><td>Staleness, key status, verification notes</td></tr>
+      <tr><td><code>warnings</code></td><td><code>string[]</code></td><td>Staleness, key status, verification notes. The staleness check uses strict greater-than comparison &mdash; a KeyDocument whose age exactly equals <code>keyDocumentMaxAge</code> is not stale.</td></tr>
       <tr><td><code>identityType?</code></td><td><code>string</code></td><td>For anonymous: "anonymous-ephemeral" | "pseudonymous"</td></tr>
       <tr><td><code>decryptedContent?</code></td><td><code>Uint8Array</code></td><td>Mode 2 with valid key</td></tr>
       <tr><td><code>disclosedNQuads?</code></td><td><code>string[]</code></td><td>Mode 3 mandatory statements</td></tr>
