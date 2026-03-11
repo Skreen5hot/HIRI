@@ -138,7 +138,11 @@
 
     .qa.open .answer {
       padding: 0.85rem 1.15rem;
-      max-height: 500px;
+      max-height: 800px;
+    }
+
+    .answer a {
+      color: var(--accent);
     }
 
     .answer code {
@@ -194,116 +198,206 @@
     <div class="qa open">
       <div class="question">What is HIRI?</div>
       <div class="answer">
-        HIRI is a decentralized semantic knowledge system where computation,
-        reasoning, and learning occur at the edge. Knowledge is represented
-        as JSON-LD artifacts that can be published, shared, reasoned over,
-        or kept private — without requiring centralized infrastructure.
+        A decentralized protocol for verifiable, privacy-aware knowledge. Data is
+        JSON-LD, cryptographically signed, content-addressed, and organized into
+        tamper-evident version chains. Content can be public, encrypted for specific
+        recipients, selectively disclosed at the RDF statement level, or held
+        privately — all without centralized infrastructure.
       </div>
     </div>
 
     <div class="qa">
       <div class="question">Is HIRI a product, a platform, or a protocol?</div>
       <div class="answer">
-        HIRI is primarily a specification and architectural model.
-        Implementations can appear as desktop apps, browser applications,
-        CLI tools, embedded systems, or server deployments, but none of those
-        are required by the core spec.
+        A specification with a reference implementation. Two specs: core protocol (v3.1)
+        and Privacy Extension (v1.4.1). The reference implementation has 323 tests, an
+        interactive browser demo, and a developer guide. Deployments can be browser apps,
+        CLI tools, desktop apps, or servers — none required by the spec.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">How does HIRI differ from blockchain-based systems?</div>
+      <div class="question">How does HIRI differ from blockchain?</div>
       <div class="answer">
-        HIRI uses hash-linked manifest chains for sequential history, but requires
-        no consensus protocol, no global state, and no mining. Each authority manages
-        its own chain independently. Verification is local and deterministic — any node
-        can verify any chain without contacting a network.
+        HIRI uses hash-linked chains but requires no consensus, no global state,
+        and no mining. Each authority manages its own chain. Verification is local
+        and deterministic — no network needed.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">How does HIRI differ from W3C Verifiable Credentials?</div>
+      <div class="answer">
+        VCs focus on claims about subjects ("this person has a degree"). HIRI verifies
+        arbitrary JSON-LD documents — not just credentials. HIRI adds version chains,
+        five privacy modes, cross-mode chain walking, and statement-level selective
+        disclosure of individual RDF triples.
       </div>
     </div>
   </section>
 
   <section>
-    <h2>Architecture &amp; Deployment</h2>
+    <h2>Architecture</h2>
 
     <div class="qa">
-      <div class="question">Does HIRI require servers or cloud infrastructure?</div>
+      <div class="question">Does HIRI require servers?</div>
       <div class="answer">
-        No. HIRI's canonical execution environment is a browser or a local
-        Node.js runtime. Servers, clouds, and containers are optional
-        optimizations, not architectural dependencies.
+        No. The <a href="index.html">demo</a> — including
+        all five privacy modes, AES-256-GCM encryption, X25519 key agreement, and
+        SPARQL querying — runs entirely in your browser with zero network requests.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">Can HIRI run on a desktop and a server?</div>
+      <div class="question">What is "Edge-Canonical"?</div>
       <div class="answer">
-        Yes. The same specification supports both. A server deployment
-        is simply a node that is always on and reachable. A desktop
-        deployment is a node with local control and intermittent connectivity.
+        The system must function fully on a single machine. Anything that can't
+        is infrastructure, not core logic, and must be optional.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">What is the "Edge-Canonical" principle?</div>
+      <div class="question">What is the layer architecture?</div>
       <div class="answer">
-        It means the system must function fully without modification
-        on a single machine. Anything that cannot do so is considered
-        infrastructure, not core logic, and must be optional. The
-        <a href="index.html" style="color:var(--accent)">interactive demo</a>
-        runs entirely in your browser with zero network requests — proving this principle.
+        Three layers. <strong>Layer 0 (Kernel):</strong> pure computation — signing,
+        chaining, resolution. No I/O, no dependencies.
+        <strong>Layer 1 (Adapters):</strong> crypto, storage, RDF engines.
+        <strong>Layer 2 (Privacy):</strong> five privacy modes composing with
+        Layers 0 and 1 without modifying either. An automated purity checker
+        enforces boundaries. Zero kernel files were changed across the entire
+        privacy implementation.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">What storage backends does HIRI support?</div>
+      <div class="question">What storage backends are supported?</div>
       <div class="answer">
-        HIRI is storage-agnostic. The kernel uses a <code>StorageAdapter</code> interface
-        with <code>get(hash)</code> and <code>put(hash, bytes)</code> methods. The reference
-        implementation includes <code>InMemoryStorageAdapter</code>, <code>FileSystemAdapter</code>
-        (Node.js), and <code>DelayedAdapter</code> (for latency simulation). Any backend
-        (IndexedDB, S3, IPFS) can implement this interface.
+        Anything implementing <code>get(hash)</code> and <code>has(hash)</code>.
+        Reference includes in-memory, filesystem, and latency-simulated adapters.
+        IndexedDB, S3, IPFS — all compatible.
       </div>
     </div>
   </section>
 
   <section>
-    <h2>Privacy, Security, and Trust</h2>
+    <h2>Privacy Modes</h2>
 
-    <div class="qa">
-      <div class="question">Can a user run a HIRI node without exposing its contents?</div>
+    <div class="qa open">
+      <div class="question">What are the five privacy modes?</div>
       <div class="answer">
-        Yes. A node may participate in a network while revealing only
-        metadata, proofs, or capability claims — never raw knowledge artifacts
-        unless explicitly published.
+        <strong>Mode 1 — Proof of Possession:</strong> Proves you hold data without revealing it. Content is never stored.<br><br>
+        <strong>Mode 2 — Encrypted Distribution:</strong> AES-256-GCM encryption with per-recipient X25519 key agreement. Unauthorized parties verify the manifest but can't read content.<br><br>
+        <strong>Mode 3 — Selective Disclosure:</strong> Canonicalize JSON-LD into individual RDF statements. Disclose some, withhold others. Each gets a salted hash and HMAC proof.<br><br>
+        <strong>Mode 4 — Anonymous Publication:</strong> One-time ephemeral keypair, destroyed after signing. Two publications are computationally unlinkable. Composes with any content visibility.<br><br>
+        <strong>Mode 5 — Attestation:</strong> Third party vouches for a property of someone else's data. Dual-signature verification. Trust reported as full, partial, or unverifiable.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">Can nodes collaborate without sharing private data?</div>
+      <div class="question">Can I encrypt content for specific recipients?</div>
       <div class="answer">
-        Yes. HIRI supports participation via cryptographic commitments,
-        hashes, summaries, or derived outputs rather than direct content sharing.
-        Knowledge can remain local while its effects propagate.
+        Yes. Mode 2 generates a random content encryption key, encrypts with AES-256-GCM,
+        then wraps the key separately for each recipient via X25519 key agreement.
+        <a href="index.html">Tab E.2</a> lets you encrypt
+        for multiple recipients and resolve as each one — including an unauthorized party.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">How is hardware and local data protected?</div>
+      <div class="question">What is selective disclosure?</div>
       <div class="answer">
-        HIRI does not require privileged access, background daemons,
-        or system-level services. All execution occurs within the permissions
-        of the host environment (browser sandbox or user-level Node process).
+        RDF-level access control. A personnel record can disclose name and title publicly,
+        email to partners, and birthdate to nobody. Each statement is independently
+        verifiable. The disclosed statements form a valid RDF subgraph loadable into SPARQL.
       </div>
     </div>
+
+    <div class="qa">
+      <div class="question">Can I publish anonymously?</div>
+      <div class="answer">
+        Yes. <strong>Ephemeral</strong> authorities are one-time and unlinkable.
+        <strong>Pseudonymous</strong> authorities are persistent and linkable by design.
+        Both compose with any content visibility — an anonymous whistleblower can
+        publish selectively disclosed evidence.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">What if I lose my decryption key?</div>
+      <div class="answer">
+        The data is permanently opaque to you. No password reset, no admin override.
+        The publisher can re-encrypt for new recipients if they still have the
+        plaintext, but that requires action. Treat recipient key management with
+        the same rigor as any PKI deployment.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">How does attestation trust work?</div>
+      <div class="answer">
+        Dual-signature: attestor's signature + subject authority's signature.
+        <strong>Full:</strong> both verified, key active.
+        <strong>Partial:</strong> subject unavailable or key revoked but subject verified.
+        <strong>Unverifiable:</strong> attestor sig fails or key revoked with no subject.
+        Stale attestations (past <code>validUntil</code>) are flagged but not invalid.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">Can privacy modes change across versions?</div>
+      <div class="answer">
+        Yes, but only toward less privacy. PoP → Encrypted → Public is valid.
+        Public → anything private is not — you can't unpublish.
+        The chain walker uses <code>getLogicalPlaintextHash()</code> to maintain
+        content identity even when the storage format changes between modes.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Security &amp; Keys</h2>
 
     <div class="qa">
       <div class="question">How does key rotation work?</div>
       <div class="answer">
-        Key rotation requires a dual-signature proof: both the old key and the new key
-        sign a rotation claim. A configurable grace period allows manifests signed by the
-        old key to remain valid for a defined duration after rotation. After the grace period
-        expires, old-key signatures are rejected. This can be explored in the
-        <a href="index.html" style="color:var(--accent)">demo's Mock Clock slider</a>.
+        Dual-signature proof: old key and new key both sign the rotation claim.
+        Grace period keeps old-key signatures valid for a configured duration.
+        After expiry, old-key signatures are rejected. Try the
+        <a href="index.html">Mock Clock slider in Tab A</a>.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">What cryptographic primitives are used?</div>
+      <div class="answer">
+        <strong>Signing:</strong> Ed25519.
+        <strong>Hashing:</strong> SHA-256.
+        <strong>Encryption:</strong> AES-256-GCM.
+        <strong>Key agreement:</strong> X25519 ECDH → HKDF-SHA256 → AES-GCM wrap.
+        <strong>HMAC:</strong> HMAC-SHA256.
+        <strong>Canonicalization:</strong> JCS (JSON) or URDNA2015 (RDF).
+        Ed25519 is for signing; X25519 is for key agreement — separate key types,
+        no cross-usage.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">What does "verified: true, decryption-failed" mean?</div>
+      <div class="answer">
+        The manifest is authentic and untampered (signature and chain are valid).
+        You just don't have the right key to read the content. Verification and
+        decryption are orthogonal. This is not an error — it's the expected result
+        for unauthorized parties.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">Are private keys protected in the implementation?</div>
+      <div class="answer">
+        Yes. Content encryption keys, ephemeral private keys, and HMAC keys are
+        explicitly zeroed after each operation. No privileged access, background
+        daemons, or system-level services required — everything runs in the
+        browser sandbox or user-level Node process.
       </div>
     </div>
   </section>
@@ -314,38 +408,29 @@
     <div class="qa">
       <div class="question">What role does JSON-LD play?</div>
       <div class="answer">
-        JSON-LD is the canonical representation for all knowledge,
-        configuration, and inter-component contracts. This ensures
-        transparency, inspectability, and long-term interoperability.
+        Canonical representation for all knowledge artifacts. Provides semantic
+        interoperability (terms resolve to URIs), graph structure (loadable into
+        RDF stores), and deterministic canonicalization (URDNA2015 for selective
+        disclosure, JCS for general signing).
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">What is an A-Box in HIRI?</div>
+      <div class="question">Why does entailment default to "none"?</div>
       <div class="answer">
-        The A-Box represents asserted facts and observations. In HIRI,
-        A-Boxes may be private, shared selectively, or published publicly
-        as immutable knowledge artifacts.
+        Deterministic, auditable results. If <code>SoftwareArchitect subClassOf Person</code>,
+        querying for <code>Person</code> returns zero results under <code>"none"</code> —
+        inference must be explicitly requested. <a href="index.html">Tab C</a>
+        demonstrates this boundary.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">What is entailment and why does HIRI default to "none"?</div>
+      <div class="question">Can disclosed statements be queried with SPARQL?</div>
       <div class="answer">
-        Entailment is the process of inferring new facts from existing ones (e.g., if
-        <code>SoftwareArchitect rdfs:subClassOf Person</code>, then instances of SoftwareArchitect
-        are also instances of Person). HIRI defaults to entailment mode <code>"none"</code> to ensure
-        deterministic, auditable query results. Inference is a powerful tool, but it must be
-        explicitly requested — not silently applied.
-      </div>
-    </div>
-
-    <div class="qa">
-      <div class="question">Is intermediate learning considered "published"?</div>
-      <div class="answer">
-        Intermediate knowledge can be treated as first-class artifacts.
-        This enables auditability, reproducibility, and collaborative
-        reasoning without hidden model state.
+        Yes. Mandatory N-Quads from selective disclosure form a valid RDF subgraph.
+        Load into Oxigraph, query with SPARQL. Withheld statements are simply
+        absent — no false positives, no schema violations.
       </div>
     </div>
   </section>
@@ -354,31 +439,71 @@
     <h2>Advanced Topics</h2>
 
     <div class="qa">
-      <div class="question">Does the spec account for quantum encoding?</div>
+      <div class="question">How do deltas work?</div>
       <div class="answer">
-        The spec is encoding-agnostic. While it does not mandate quantum
-        representations, it does not preclude them. Any encoding that can
-        be losslessly mapped to JSON-LD can participate.
+        Version updates include a JSON Patch (or RDF Patch for URDNA2015 profiles)
+        alongside full content. The resolver tries the delta first — faster and
+        smaller. If the patched hash doesn't match, it falls back to full content.
+        Deltas are an optimization, not a trust boundary.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">How does HIRI handle offline or degraded operation?</div>
+      <div class="question">What about the dictionary attack on withheld statements?</div>
       <div class="answer">
-        Offline operation is a first-class mode. Partial information,
-        deferred resolution, and explicit uncertainty are valid and expected
-        states — not failures.
+        For low-entropy fields (8 blood types, ~36K birth dates), an attacker can
+        enumerate candidates against the salted hash. The salt stops rainbow tables;
+        the HMAC key stops per-manifest enumeration. Even if the attacker finds the
+        hash match, they can't forge the HMAC tag without the secret key.
+        <a href="index.html">Tab E.3</a> has an animated
+        simulator demonstrating this.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">How does the delta mechanism work for version chains?</div>
+      <div class="question">What are the conformance levels?</div>
       <div class="answer">
-        When content is updated, HIRI computes a JSON Patch (RFC 6902) delta between
-        the previous and current versions. The delta is stored alongside the full content.
-        During chain walking, the resolver first tries the delta path (faster, smaller).
-        If the delta produces content whose hash doesn't match the manifest's content hash,
-        it falls back to fetching full content. This makes deltas an optimization, not a trust boundary.
+        <strong>Level 1:</strong> Detect privacy modes, verify signatures, report
+        <code>"unsupported-mode"</code> for unimplemented modes (never reject).<br>
+        <strong>Level 2:</strong> Implement encryption and selective disclosure.<br>
+        <strong>Level 3:</strong> Cross-mode chain walking, anonymous publication,
+        attestation trust levels, metadata hardening.<br>
+        The reference implementation achieves Level 3 (323 tests, 14 suites).
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">What about quantum computing?</div>
+      <div class="answer">
+        Ed25519 and X25519 are not quantum-resistant. The key agreement field
+        accepts alternative identifiers — HPKE is already supported. Post-quantum
+        algorithms can be added via the same mechanism when standardized.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The Demo</h2>
+
+    <div class="qa open">
+      <div class="question">What can I do in the demo?</div>
+      <div class="answer">
+        Five tabs, zero network requests:<br><br>
+        <strong>A (Keys):</strong> Generate identities, rotate keys, watch status transitions via Mock Clock.<br>
+        <strong>B (Build):</strong> Sign JSON-LD, build version chains with deltas.<br>
+        <strong>C (Query):</strong> SPARQL over verified content in Oxigraph WASM.<br>
+        <strong>D (Resolve):</strong> Resolve URIs, prove byte-identical results, inject faults.<br>
+        <strong>E (Privacy):</strong> All five modes interactive — encrypt, disclose, attest, go anonymous.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">What are presets?</div>
+      <div class="answer">
+        Pre-built scenarios that skip setup. Includes: simple verification,
+        chain with deltas, key rotation, URDNA2015 + CIDv1, encrypted distribution,
+        selective disclosure, anonymous whistleblower, attestation, and
+        cross-mode privacy lifecycle chains.
       </div>
     </div>
   </section>
@@ -387,21 +512,33 @@
     <h2>Business Value</h2>
 
     <div class="qa">
-      <div class="question">Why should organizations care about HIRI?</div>
+      <div class="question">Why should organizations care?</div>
       <div class="answer">
-        HIRI reduces infrastructure dependency, increases data sovereignty,
-        improves auditability, and enables collaboration without forced
-        centralization — making it ideal for regulated, distributed,
-        or mission-critical environments.
+        Less infrastructure dependency. More data sovereignty. Cryptographic
+        access control that travels with the data — not a policy that can be
+        bypassed, but a mathematical property that makes unauthorized access
+        computationally impossible.
       </div>
     </div>
 
     <div class="qa">
-      <div class="question">Is this suitable for government or critical systems?</div>
+      <div class="question">Is this suitable for government systems?</div>
       <div class="answer">
-        Yes. The architecture aligns naturally with zero-trust principles,
-        air-gapped operation, provenance tracking, and formal reasoning.
-        It is designed to be safe to propose, evaluate, and pilot.
+        Yes. The five modes map to government data patterns: proof of possession
+        for classified existence claims, encrypted distribution for inter-agency
+        sharing, selective disclosure for FOIA-like partial release, anonymous
+        publication for whistleblower protection, attestation for cross-agency
+        clearance verification. All local, no external dependencies.
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="question">Who is the privacy extension designed for?</div>
+      <div class="answer">
+        Everyone. The Publisher Neutrality principle (§4.6) states that privacy
+        modes serve non-human agents with equal rigor. The same encryption
+        protecting medical records protects a synthetic agent's reasoning
+        traces. The protocol makes no distinction about who deserves privacy.
       </div>
     </div>
   </section>
