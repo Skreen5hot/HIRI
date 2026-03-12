@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HIRI Protocol — Enterprise Deployment Guide</title>
+  <meta name="description" content="HIRI Protocol: Enterprise deployment guidance for key management, regulatory compliance (GDPR, CCPA, HIPAA), data lifecycle, and security architecture.">
+  <style>
+    :root {
+      --bg: #0e1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #1f6feb;
+      --code-bg: #1c2128;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.15s;
+    }
+    nav a:hover { color: var(--accent); }
+    nav a.active { color: var(--accent); font-weight: 600; }
+
+    nav .brand {
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 1rem;
+      margin-right: 1rem;
+    }
+
+    header {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 1rem;
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--accent);
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 3rem;
+    }
+
+    section { margin-bottom: 3rem; }
+
+    h2 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--accent);
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.25rem;
+    }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 1.5rem 0 0.75rem;
+    }
+
+    p { margin-bottom: 0.85rem; color: var(--text-muted); }
+
+    a { color: var(--accent); }
+
+    strong { color: var(--text); }
+
+    code {
+      background: var(--code-bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.85em;
+      color: var(--accent);
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: var(--text-muted);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: inherit;
+      color: inherit;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1.15rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .card h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .card p { margin-bottom: 0.4rem; font-size: 0.95rem; }
+    .card p:last-child { margin-bottom: 0; }
+
+    .risk-tag {
+      display: inline-block;
+      padding: 0.1rem 0.5rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      vertical-align: middle;
+    }
+    .risk-green { background: rgba(63,185,80,0.15); color: var(--green); }
+    .risk-yellow { background: rgba(210,153,34,0.15); color: var(--yellow); }
+    .risk-red { background: rgba(248,81,73,0.15); color: var(--red); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.6rem 0.85rem;
+      border: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    td { color: var(--text-muted); }
+
+    .normative {
+      border-left: 3px solid var(--yellow);
+      padding: 0.85rem 1.15rem;
+      background: rgba(210,153,34,0.06);
+      margin-bottom: 1rem;
+      border-radius: 0 4px 4px 0;
+    }
+
+    .normative p { margin-bottom: 0.3rem; }
+    .normative p:last-child { margin-bottom: 0; }
+
+    ul, ol {
+      margin: 0 0 1rem 1.5rem;
+      color: var(--text-muted);
+    }
+
+    li { margin-bottom: 0.35rem; }
+
+    footer {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+
+    footer p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-style: italic;
+    }
+
+    @media (max-width: 600px) {
+      header h1 { font-size: 1.5rem; }
+      pre { font-size: 0.8rem; padding: 0.75rem; }
+      table { font-size: 0.8rem; }
+      th, td { padding: 0.4rem 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">HIRI Protocol</span>
+  <a href="index.html">Demo</a>
+  <a href="faq.html">FAQ</a>
+  <a href="developer-guide.html">Developer Guide</a>
+  <a href="enterprise.html" class="active">Enterprise</a>
+</nav>
+
+<header>
+  <h1>Enterprise Deployment Guide</h1>
+  <p>
+    Deployment patterns, key management, regulatory compliance, and security
+    architecture for organizations adopting the HIRI protocol.
+  </p>
+</header>
+
+<main>
+
+  <!-- ───────────────────── DEPLOYMENT PROFILES ───────────────────── -->
+  <section id="profiles">
+    <h2>1. Deployment Profiles</h2>
+
+    <p>
+      The protocol defines three deployment profiles (Privacy Extension &sect;18.3).
+      Choose based on your data sensitivity and regulatory environment.
+    </p>
+
+    <div class="card">
+      <h4>Minimal <span class="risk-tag risk-green">Low Risk</span></h4>
+      <p>Privacy Level 1 + Proof of Possession. For organizations needing provenance
+        and integrity without confidentiality. Software bill of materials (SBOM),
+        scientific data provenance, policy integrity verification.</p>
+    </div>
+
+    <div class="card">
+      <h4>Standard <span class="risk-tag risk-yellow">Regulated</span></h4>
+      <p>Privacy Level 2 + Encrypted Distribution + Selective Disclosure.
+        HIRI KeyDocument bootstrapping. Recommended metadata-hardening defaults.
+        Suitable for general enterprise data, inter-organization sharing,
+        and most regulatory environments.</p>
+    </div>
+
+    <div class="card">
+      <h4>High-Assurance <span class="risk-tag risk-red">Sensitive</span></h4>
+      <p>Privacy Level 3 + all five modes + metadata hardening + transparency
+        log checkpoints. For regulated data (HIPAA, financial), intelligence,
+        legally privileged information, and environments requiring formal
+        auditability of every operation.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────── KEY MANAGEMENT ───────────────────── -->
+  <section id="key-management">
+    <h2>2. Key Management</h2>
+
+    <p>
+      Key protection is outside the protocol's scope &mdash; this is true of every signing
+      protocol (X.509, PGP, FIDO2, W3C Verifiable Credentials, JWTs). The protocol provides
+      the mechanisms; the deployment provides the protection.
+    </p>
+
+    <h3>CryptoProvider Injection</h3>
+    <p>
+      All cryptographic operations flow through an injectable <code>CryptoProvider</code>
+      interface. The reference implementation uses Web Crypto API, but enterprise
+      deployments can substitute any backend:
+    </p>
+
+    <pre><code>// Reference: Web Crypto (browser/Node.js)
+const crypto = { sign, verify, hash, generateKeypair, ... };
+
+// Enterprise: HSM-backed provider
+const crypto = createHsmCryptoProvider({
+  slot: 0,
+  pin: process.env.HSM_PIN,
+  // Keys never leave the HSM boundary
+});
+
+// All protocol operations accept the provider
+const signed = await signManifest(unsigned, key, timestamp, profile, crypto);</code></pre>
+
+    <p>
+      The signing key never needs to exist in application memory. An HSM or secure
+      enclave holds the private key and performs the Ed25519 signature internally.
+      The protocol receives the signature bytes &mdash; it never sees the key.
+    </p>
+
+    <h3>Key Lifecycle</h3>
+    <table>
+      <tr><th>Operation</th><th>Mechanism</th><th>Spec Reference</th></tr>
+      <tr><td>Generation</td><td>Ed25519 keypair via <code>CryptoProvider</code></td><td>Core &sect;4</td></tr>
+      <tr><td>Rotation</td><td>Dual-signature proof (old + new key)</td><td>Core &sect;5.3</td></tr>
+      <tr><td>Revocation</td><td>KeyDocument with <code>revokedKeys</code>, <code>manifestsInvalidAfter</code></td><td>Core &sect;5.4</td></tr>
+      <tr><td>Grace period</td><td>Configurable window after rotation; old-key sigs remain valid</td><td>Core &sect;5.3</td></tr>
+      <tr><td>Staleness detection</td><td><code>keyDocumentMaxAge</code> parameter on resolver</td><td>Privacy &sect;13.1</td></tr>
+    </table>
+
+    <h3>Recommended <code>keyDocumentMaxAge</code> by Risk Tier</h3>
+    <table>
+      <tr><th>Tier</th><th>Value</th><th>Use Case</th></tr>
+      <tr><td>Financial / Healthcare</td><td>1 hour</td><td>High-frequency verification, real-time revocation awareness</td></tr>
+      <tr><td>General Enterprise</td><td>24 hours</td><td>Standard inter-org data exchange</td></tr>
+      <tr><td>Archival / Low-Risk</td><td>7 days</td><td>Scientific data, SBOM verification, historical records</td></tr>
+    </table>
+
+    <p>
+      When the cached KeyDocument exceeds <code>keyDocumentMaxAge</code>, the resolver
+      emits a <code>keyDocumentStale: true</code> warning. The application layer decides
+      whether to proceed or require a refresh. This is the same trade-off as CRL/OCSP
+      caching in X.509: you can have offline verification or real-time revocation status,
+      not both simultaneously.
+    </p>
+  </section>
+
+  <!-- ───────────────────── DATA LIFECYCLE ───────────────────── -->
+  <section id="data-lifecycle">
+    <h2>3. Data Lifecycle &amp; Erasure</h2>
+
+    <p>
+      HIRI artifacts are <strong>not</strong> &ldquo;immutable once distributed.&rdquo;
+      The protocol is storage-agnostic &mdash; it defines <code>get(hash)</code> and
+      <code>has(hash)</code>, not <code>distribute()</code> or <code>replicate()</code>.
+      The deployer controls every byte.
+    </p>
+
+    <h3>Correction: Version Chains</h3>
+    <p>
+      When data is wrong, publish a new version. V2 supersedes V1. The chain records
+      the correction history &mdash; this is auditable correction, not absence of correction.
+      Every database with an audit log works this way.
+    </p>
+
+    <h3>Erasure: Three Mechanisms</h3>
+
+    <div class="card">
+      <h4>1. Storage-Level Deletion</h4>
+      <p>Delete content bytes from the storage adapter. The manifest chain records that a
+        version existed, but the content is no longer retrievable. Resolution returns
+        &ldquo;content not found.&rdquo;</p>
+    </div>
+
+    <div class="card">
+      <h4>2. Cryptographic Erasure (Mode 2)</h4>
+      <p>Destroy the content encryption key. The ciphertext remains but is permanently
+        unreadable &mdash; computationally equivalent to deletion. This is a recognized
+        GDPR-compliant erasure technique (acknowledged by UK ICO and French CNIL).</p>
+    </div>
+
+    <div class="card">
+      <h4>3. Retention Schedule via Storage Adapter TTLs</h4>
+      <p>Implement time-to-live in the storage adapter. Content older than the retention
+        policy is automatically purged. The manifest chain provides the audit trail that
+        the data once existed and was removed per policy.</p>
+    </div>
+
+    <h3>Privacy Monotonicity</h3>
+    <p>
+      The rule &ldquo;once public, cannot be made private&rdquo; is an <strong>integrity</strong>
+      property: it prevents a publisher from claiming they never published something they
+      did publish. It does <strong>not</strong> prevent deleting the content from storage.
+      The chain records that V3 was public; if V3&rsquo;s content bytes are deleted, resolution
+      returns &ldquo;content not found&rdquo; &mdash; which is the correct behavior for erasure.
+    </p>
+    <p>
+      This is actually better for compliance than most systems: you can prove you responded
+      to an erasure request (the chain shows the version existed and was then made unavailable),
+      while actually erasing the content. Most databases cannot prove they deleted something
+      without maintaining a log of the deletion &mdash; which itself contains metadata about
+      the deleted record.
+    </p>
+  </section>
+
+  <!-- ───────────────────── REGULATORY COMPLIANCE ───────────────────── -->
+  <section id="regulatory">
+    <h2>4. Regulatory Compliance</h2>
+
+    <p>
+      HIRI provides the cryptographic primitives. The deployment provides the governance.
+      The protocol gives the controller the ability to locate, modify, restrict, and delete data:
+    </p>
+
+    <ul>
+      <li><strong>Locate:</strong> Content-addressed hashes are globally unique identifiers. A storage adapter with an index locates every artifact by hash.</li>
+      <li><strong>Modify:</strong> Version chains with deltas are the correction mechanism.</li>
+      <li><strong>Restrict:</strong> Mode 1 (PoP) withholds entirely. Mode 2 (Encrypted) restricts to named recipients. Mode 3 (SD) restricts at the statement level.</li>
+      <li><strong>Delete:</strong> Storage-level deletion removes content bytes. Cryptographic erasure (Mode 2 key destruction) makes content permanently unreadable.</li>
+    </ul>
+
+    <h3>GDPR (Arts. 16, 17, 25)</h3>
+    <div class="card">
+      <p><strong>Right to rectification (Art. 16):</strong> Version chains. V2 corrects V1.</p>
+      <p><strong>Right to erasure (Art. 17):</strong> Storage deletion + cryptographic erasure.</p>
+      <p><strong>Privacy by design (Art. 25):</strong> The privacy extension &mdash; five modes,
+        selective disclosure, encrypted distribution &mdash; is privacy by design.</p>
+    </div>
+
+    <h3>CCPA / CPRA</h3>
+    <div class="card">
+      <p>Same mechanisms as GDPR. Controller deletes from storage. Cryptographic erasure
+        for encrypted content. The content-addressed model provides the audit trail for
+        &ldquo;right to know&rdquo; requests.</p>
+    </div>
+
+    <h3>HIPAA</h3>
+    <div class="card">
+      <p><strong>Access logging:</strong> The storage adapter can log every <code>get()</code>
+        call. This is a deployment concern, not a protocol limitation.</p>
+      <p><strong>Minimum necessary:</strong> Mode 3 selective disclosure shares exactly the
+        fields needed and nothing more &mdash; statement-level access control maps directly
+        to the minimum necessary standard.</p>
+    </div>
+
+    <h3>PCI-DSS</h3>
+    <div class="card">
+      <p>Cardholder data should not be placed in HIRI artifacts. Use HIRI for payment
+        metadata, attestations, and provenance &mdash; not card numbers or CVVs.
+        <span class="risk-tag risk-red">Exclusion</span></p>
+    </div>
+
+    <h3>ITAR / EAR</h3>
+    <div class="card">
+      <p>Geographic access control requires infrastructure (geo-fencing, network controls).
+        This is not a HIRI-specific limitation &mdash; any data that leaves a controlled
+        network is subject to this concern. Deploy HIRI within controlled perimeters for
+        export-controlled data. <span class="risk-tag risk-red">Exclusion</span></p>
+    </div>
+  </section>
+
+  <!-- ───────────────────── ATTESTATION & REGULATED DATA ───────────────────── -->
+  <section id="attestation-compliance">
+    <h2>5. Attestation &amp; Regulated Data</h2>
+
+    <div class="normative">
+      <p><strong>Deployment Requirement:</strong> Attestation manifests referencing regulated
+        data MUST use content hashes as subject references, MUST NOT contain directly or
+        indirectly identifying information, and MUST rely on the originating system&rsquo;s
+        internal crosswalk for hash-to-person resolution.</p>
+    </div>
+
+    <p>
+      A content hash is opaque outside the originating system. It is not personal data
+      under GDPR, PHI under HIPAA, or personal information under CCPA &mdash; unless the
+      attestation itself contains linkable identifiers. The constraint above ensures
+      it does not.
+    </p>
+
+    <h3>Compliance Pattern</h3>
+    <pre><code>// Attestation references a content hash — not a person
+{
+  "hiri:attestation": {
+    "subject": "hiri://sha256:a1b2c3...",   // opaque hash
+    "claim": "clearance-verified",
+    "validUntil": "2026-12-31T00:00:00Z"
+  }
+}
+
+// The originating system maintains the crosswalk:
+//   sha256:a1b2c3... → Employee #4821 (internal only)
+// The attestation chain never sees the employee ID.</code></pre>
+
+    <p>
+      This separation means the attestation can be shared, cached, and verified by third
+      parties without exposing the identity of the data subject. The originating system
+      resolves the hash to a person only when authorized &mdash; and that resolution is
+      a standard database lookup under existing access controls.
+    </p>
+  </section>
+
+  <!-- ───────────────────── SECURITY ARCHITECTURE ───────────────────── -->
+  <section id="security">
+    <h2>6. Security Architecture</h2>
+
+    <h3>Trust Bootstrapping (TOFU)</h3>
+    <p>
+      First contact with an authority has no out-of-band trust anchor. This is the Trust On
+      First Use problem, shared by SSH, Signal, PGP, and every system without a centralized
+      certificate authority. Recommended bootstrapping patterns:
+    </p>
+
+    <ul>
+      <li><strong>DNS TXT records:</strong> Publish the authority string in a DNS TXT record for the organization&rsquo;s domain. Verifiers resolve the domain to confirm the authority.</li>
+      <li><strong>QR code exchange:</strong> Encode the authority in a QR code for in-person or out-of-band verification.</li>
+      <li><strong>Organizational key registries:</strong> Maintain an internal directory mapping departments or roles to HIRI authorities.</li>
+      <li><strong>Attestation chains:</strong> A trusted attestor (e.g., an organizational root) vouches for subordinate authorities via Mode 5 attestation manifests.</li>
+    </ul>
+
+    <h3>Artifact Integrity at Rest</h3>
+    <p>
+      Content-addressed storage with hash verification is the protection. If an attacker
+      replaces an artifact on disk, the hash does not match, and verification fails. The
+      resolver explicitly checks <code>computedHash !== expectedHash</code> and rejects on
+      mismatch. This is the entire point of content-addressed storage.
+    </p>
+
+    <h3>Ephemeral Key Destruction</h3>
+    <p>
+      The reference implementation calls <code>Uint8Array.fill(0)</code> to overwrite
+      ephemeral keys after use. This overwrites the JavaScript heap allocation, but the
+      runtime, OS, and hardware may retain copies (swap files, SSD wear leveling, memory
+      dumps). True ephemeral key destruction requires hardware support &mdash; secure
+      enclaves, TPMs with key attestation. For deployments where unlinkability is a hard
+      requirement, use hardware-backed key generation via the <code>CryptoProvider</code>
+      injection point.
+    </p>
+
+    <h3>Selective Disclosure: Field Entropy</h3>
+    <p>
+      Low-entropy fields (booleans, small enumerations like blood types, date ranges)
+      are vulnerable to dictionary enumeration even with salted hashing. The salt defeats
+      rainbow tables; the HMAC key defeats per-manifest enumeration. But for fields with
+      very small value spaces:
+    </p>
+    <ul>
+      <li><strong>Combine fields:</strong> Disclose low-entropy fields together with high-entropy fields in a single composite statement.</li>
+      <li><strong>Pad values:</strong> Use metadata hardening (Privacy Extension &sect;15.3) to pad statement counts and obscure field boundaries.</li>
+      <li><strong>Withhold entirely:</strong> If a field&rsquo;s value space is small enough to enumerate (e.g., boolean, 8 blood types), consider Mode 1 (PoP) for that portion of the data instead of selective disclosure.</li>
+    </ul>
+
+    <h3>Browser vs. Server Deployments</h3>
+    <p>
+      The protocol is not browser-specific. The <a href="index.html">demo</a> runs in a
+      browser to prove the edge-canonical principle; production deployments can use Node.js,
+      Deno, or any environment with Web Crypto API support. Browser deployments inherit
+      browser risks (XSS, Spectre-class side channels). Server deployments avoid these
+      but require their own hardening (network security, process isolation).
+    </p>
+  </section>
+
+  <!-- ───────────────────── RISK SUMMARY ───────────────────── -->
+  <section id="risk-summary">
+    <h2>7. Risk Summary</h2>
+
+    <table>
+      <tr>
+        <th>Concern</th>
+        <th>Classification</th>
+        <th>Mitigation</th>
+      </tr>
+      <tr>
+        <td>Private key exfiltration</td>
+        <td><span class="risk-tag risk-yellow">Deployment</span></td>
+        <td>HSM / secure enclave via <code>CryptoProvider</code></td>
+      </tr>
+      <tr>
+        <td>Revocation propagation</td>
+        <td><span class="risk-tag risk-yellow">Trade-off</span></td>
+        <td><code>keyDocumentMaxAge</code> staleness detection</td>
+      </tr>
+      <tr>
+        <td>TOFU bootstrapping</td>
+        <td><span class="risk-tag risk-yellow">Deployment</span></td>
+        <td>DNS, QR, attestation chains, org registries</td>
+      </tr>
+      <tr>
+        <td>Right to erasure</td>
+        <td><span class="risk-tag risk-green">Addressed</span></td>
+        <td>Storage deletion + cryptographic erasure (Mode 2)</td>
+      </tr>
+      <tr>
+        <td>Right to rectification</td>
+        <td><span class="risk-tag risk-green">Addressed</span></td>
+        <td>Version chains with deltas</td>
+      </tr>
+      <tr>
+        <td>Minimum necessary (HIPAA)</td>
+        <td><span class="risk-tag risk-green">Addressed</span></td>
+        <td>Mode 3 selective disclosure</td>
+      </tr>
+      <tr>
+        <td>Low-entropy field enumeration</td>
+        <td><span class="risk-tag risk-yellow">Guidance</span></td>
+        <td>Field combination, padding, or PoP fallback</td>
+      </tr>
+      <tr>
+        <td>Ephemeral key destruction</td>
+        <td><span class="risk-tag risk-yellow">Hardware</span></td>
+        <td>Secure enclave for hard unlinkability</td>
+      </tr>
+      <tr>
+        <td>Artifact integrity at rest</td>
+        <td><span class="risk-tag risk-green">Addressed</span></td>
+        <td>Hash verification at resolution time</td>
+      </tr>
+      <tr>
+        <td>PCI-DSS cardholder data</td>
+        <td><span class="risk-tag risk-red">Exclusion</span></td>
+        <td>Do not place cardholder data in HIRI artifacts</td>
+      </tr>
+      <tr>
+        <td>ITAR/EAR export control</td>
+        <td><span class="risk-tag risk-red">Exclusion</span></td>
+        <td>Deploy within controlled perimeters</td>
+      </tr>
+    </table>
+
+    <p>
+      <strong>Legend:</strong>
+      <span class="risk-tag risk-green">Addressed</span> &mdash; handled by the protocol.
+      <span class="risk-tag risk-yellow">Deployment</span> / <span class="risk-tag risk-yellow">Trade-off</span> / <span class="risk-tag risk-yellow">Guidance</span> / <span class="risk-tag risk-yellow">Hardware</span> &mdash; requires deployment configuration or operational guidance.
+      <span class="risk-tag risk-red">Exclusion</span> &mdash; certain data types should not be placed in HIRI artifacts.
+    </p>
+  </section>
+
+</main>
+
+<footer>
+  <p>
+    HIRI Protocol &mdash; Enterprise Deployment Guide.
+    Spec references: Core Protocol v3.1, Privacy Extension v1.4.1.
+  </p>
+</footer>
+
+</body>
+</html>
