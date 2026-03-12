@@ -438,6 +438,9 @@ const signed = await signManifest(unsigned, key, timestamp, profile, crypto);</c
       <p><strong>Minimum necessary:</strong> Mode 3 selective disclosure shares exactly the
         fields needed and nothing more &mdash; statement-level access control maps directly
         to the minimum necessary standard.</p>
+      <p><strong>Cross-organization verification:</strong> For patient eligibility or provider
+        credential verification, use Mode 5 attestation with content hash references per
+        <a href="#attestation-compliance">Section 5</a> &mdash; the attestation contains no PHI.</p>
     </div>
 
     <h3>PCI-DSS</h3>
@@ -475,17 +478,23 @@ const signed = await signManifest(unsigned, key, timestamp, profile, crypto);</c
     </p>
 
     <h3>Compliance Pattern</h3>
-    <pre><code>// Attestation references a content hash — not a person
+    <pre><code>// Attestation subject references hashes — not people
 {
   "hiri:attestation": {
-    "subject": "hiri://sha256:a1b2c3...",   // opaque hash
+    "subject": {
+      "authority": "key:ed25519:z6Mk...",  // originating system's signing key
+      "manifestHash": "sha256:a1b2c3...",  // opaque manifest hash
+      "contentHash": "sha256:d4e5f6...",   // opaque content hash
+      "manifestVersion": "1"
+    },
     "claim": "clearance-verified",
     "validUntil": "2026-12-31T00:00:00Z"
   }
 }
 
-// The originating system maintains the crosswalk:
-//   sha256:a1b2c3... → Employee #4821 (internal only)
+// The authority identifies the originating system's signing key,
+// not the data subject. Hash-to-person resolution is internal only:
+//   sha256:a1b2c3... → Employee #4821 (originating system's crosswalk)
 // The attestation chain never sees the employee ID.</code></pre>
 
     <p>
