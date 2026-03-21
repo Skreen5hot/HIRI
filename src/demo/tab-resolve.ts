@@ -292,7 +292,7 @@ async function handleResolve(): Promise<void> {
       <div class="panel">
         <div class="panel-header">Verified Content (V${result.manifest["hiri:version"]})</div>
         <div class="panel-body">
-          <pre>${stableStringify(JSON.parse(contentStr), true)}</pre>
+          ${renderVerifiedContent(contentStr)}
         </div>
       </div>
     `;
@@ -677,6 +677,94 @@ async function getContentHashFromStorage(mHash: string): Promise<string | null> 
   } catch {
     return null;
   }
+}
+
+function escapeHTML(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const NQUAD_PREFIXES: Record<string, string> = {
+  "http://schema.org/": "schema:",
+  "http://www.w3.org/1999/02/22-rdf-syntax-ns#": "rdf:",
+  "https://example.org/": "ex:",
+};
+
+function shortenURI(uri: string): string {
+  for (const [full, prefix] of Object.entries(NQUAD_PREFIXES)) {
+    if (uri.startsWith(full)) return prefix + uri.slice(full.length);
+  }
+  return uri;
+}
+
+function parseNQuad(nquad: string): { subject: string; predicate: string; object: string } | null {
+  const match = nquad.match(/^<([^>]+)>\s+<([^>]+)>\s+(?:<([^>]+)>|"([^"]*)")/);
+  if (!match) return null;
+  return {
+    subject: shortenURI(match[1]),
+    predicate: shortenURI(match[2]),
+    object: match[3] ? shortenURI(match[3]) : `"${match[4]}"`,
+  };
+}
+
+function renderVerifiedContent(contentStr: string): string {
+  try {
+    const parsed = JSON.parse(contentStr);
+
+    // Detect SD content blob
+    if (parsed.mandatoryNQuads && Array.isArray(parsed.mandatoryNQuads)) {
+      return renderSDContent(parsed);
+    }
+
+    // Regular JSON-LD content — escape HTML to prevent angle bracket stripping
+    return `<pre>${escapeHTML(stableStringify(parsed, true))}</pre>`;
+  } catch {
+    // Not JSON — render as escaped text
+    return `<pre>${escapeHTML(contentStr)}</pre>`;
+  }
+}
+
+function renderSDContent(blob: { mandatoryNQuads: string[]; statementIndex: string[]; hmacTags: string[] }): string {
+  const totalStatements = blob.statementIndex.length;
+  const disclosed = blob.mandatoryNQuads;
+  const withheld = totalStatements - disclosed.length;
+
+  // Group disclosed statements by subject
+  const grouped = new Map<string, Array<{ predicate: string; object: string }>>();
+  for (const stmt of disclosed) {
+    const parsed = parseNQuad(stmt);
+    if (!parsed) continue;
+    if (!grouped.has(parsed.subject)) grouped.set(parsed.subject, []);
+    grouped.get(parsed.subject)!.push({ predicate: parsed.predicate, object: parsed.object });
+  }
+
+  let html = `<div style="font-size:0.8rem;font-weight:600;margin-bottom:0.5rem">Disclosed Statements</div>`;
+
+  for (const [subject, triples] of grouped) {
+    html += `<div style="margin-bottom:0.5rem">`;
+    html += `<div style="font-weight:600;color:var(--accent);margin-bottom:0.15rem">${escapeHTML(subject)}</div>`;
+    for (const { predicate, object } of triples) {
+      html += `<div style="padding-left:1rem;display:flex;gap:0.5rem;font-size:0.75rem">`;
+      html += `<span style="color:var(--text-muted);min-width:8rem">${escapeHTML(predicate)}</span>`;
+      html += `<span>→</span>`;
+      html += `<span>${escapeHTML(object)}</span>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  if (withheld > 0) {
+    html += `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">`;
+    html += `Withheld: ${withheld} statement${withheld > 1 ? "s" : ""} (hashes only)`;
+    html += `</div>`;
+  }
+
+  // Collapse raw data behind toggle
+  html += `<details style="margin-top:0.5rem;font-size:0.7rem">`;
+  html += `<summary style="cursor:pointer;color:var(--text-muted)">Raw SD blob</summary>`;
+  html += `<pre style="margin-top:0.25rem">${escapeHTML(stableStringify(blob, true))}</pre>`;
+  html += `</details>`;
+
+  return html;
 }
 
 // Privacy badge detection for resolved manifests
