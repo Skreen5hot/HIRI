@@ -10,6 +10,8 @@
  */
 
 import { resolve, ResolutionError } from "../kernel/resolve.js";
+import { resolveWithPrivacy } from "../privacy/resolve.js";
+import type { PrivacyAwareVerificationResult } from "../privacy/types.js";
 import { InMemoryStorageAdapter } from "../adapters/persistence/storage.js";
 import { DelayedAdapter } from "../adapters/persistence/delayed.js";
 import { HiriURI } from "../kernel/hiri-uri.js";
@@ -31,6 +33,7 @@ let importedPublicKey: Uint8Array | null = null;
 let importedManifestHash: string | null = null;
 let importedUri: string | null = null;
 let importedPackageJson: string | null = null;
+let importedPrivacyMode: string | null = null;
 
 export function initResolveTab(el: HTMLElement): void {
   container = el;
@@ -253,7 +256,7 @@ async function handleResolve(): Promise<void> {
     addStep(stepsDiv, "Fetch Manifest", `hash=${manifestHash.substring(0, 24)}...`, true);
     addStep(stepsDiv, "Verify Hash", "Comparing stored vs computed hash", true);
 
-    const result = await resolve(uri, adapter, {
+    const resolveOpts = {
       crypto,
       publicKey,
       manifestHash,
@@ -262,52 +265,90 @@ async function handleResolve(): Promise<void> {
         verificationTime: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
       } : {}),
       ...buildResolveOptions(),
-    });
+    };
 
-    const elapsed = (performance.now() - startTime).toFixed(1);
+    // Use privacy resolver for privacy manifests, standard resolver otherwise
+    const usePrivacyResolver = !!importedPrivacyMode || hasPrivacyBlock();
+    if (usePrivacyResolver) {
+      const privResult = await resolveWithPrivacy(uri, adapter, resolveOpts);
+      const elapsed = (performance.now() - startTime).toFixed(1);
 
-    addStep(stepsDiv, "Verify Signature", "Cryptographic verification passed", true);
-    if (result.manifest["hiri:chain"]) {
-      addStep(stepsDiv, "Walk Chain", `Depth=${result.manifest["hiri:chain"].depth}`, true);
-    }
-    addStep(stepsDiv, "Fetch Content", `hash=${result.contentHash.substring(0, 24)}...`, true);
-    addStep(stepsDiv, "Verify Content", "Content hash matches manifest", true);
+      addStep(stepsDiv, "Verify Signature", "Cryptographic verification passed", true);
+      addStep(stepsDiv, "Privacy Mode", `${privResult.privacyMode} → ${privResult.contentStatus}`, true);
 
-    // Display result
-    const contentStr = new TextDecoder().decode(result.content);
-    resultDiv.innerHTML = `
-      <div class="info-box success">
-        Resolution <strong>succeeded</strong> in ${elapsed}ms via ${getSelectedAdapterName()}
-        ${result.warnings && result.warnings.length > 0
-          ? `<br><span style="color:var(--yellow)">Warnings: ${result.warnings.join("; ")}</span>`
-          : ""}
-      </div>
-      <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:0.8rem;margin-bottom:1rem;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
-        <span>Signature: <span style="color:var(--green)">✓ valid</span></span>
-        <span>Key: <span style="color:${result.keyVerification ? (result.keyVerification.keyStatus === "active" ? "var(--green)" : "var(--yellow)") : "var(--text-muted)"}">${result.keyVerification?.keyStatus ?? "direct"}</span></span>
-        <span>Revocation: <span style="color:var(--text-muted)">${result.keyVerification?.revocationStatus ?? "not-checked"}</span></span>
-        <span>Timestamp: <span style="color:var(--text-muted)">${result.keyVerification?.timestampVerification ?? "advisory-only"}</span></span>
-        ${getPrivacyBadges(result.manifest)}
-      </div>
-      <div class="panel">
-        <div class="panel-header">Verified Content (V${result.manifest["hiri:version"]})</div>
-        <div class="panel-body">
-          ${renderVerifiedContent(contentStr)}
+      resultDiv.innerHTML = `
+        <div class="info-box success">
+          Resolution <strong>succeeded</strong> in ${elapsed}ms via ${getSelectedAdapterName()}
+          ${privResult.warnings.length > 0
+            ? `<br><span style="color:var(--yellow)">Warnings: ${privResult.warnings.join("; ")}</span>`
+            : ""}
         </div>
-      </div>
-    `;
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:0.8rem;margin-bottom:1rem;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
+          <span>Verified: <span style="color:var(--green)">✓ ${privResult.verified}</span></span>
+          <span class="badge-${privacyBadgeClass(privResult.privacyMode)}" style="padding:0.1rem 0.4rem;border-radius:0.2rem">${privResult.privacyMode}</span>
+          <span>Content: <span style="color:var(--accent)">${privResult.contentStatus}</span></span>
+          ${privResult.identityType ? `<span>Identity: <span style="color:var(--accent)">${privResult.identityType}</span></span>` : ""}
+          ${privResult.attestationResult ? `<span>Trust: <span style="color:${privResult.attestationResult.trustLevel === "full" ? "var(--green)" : privResult.attestationResult.trustLevel === "partial" ? "var(--yellow)" : "var(--red)"}">${privResult.attestationResult.trustLevel}</span></span>` : ""}
+        </div>
+        ${renderPrivacyContent(privResult)}
+      `;
 
-    // Update transparency
-    document.getElementById("hood-content-resolve")!.innerHTML = `<pre>${stableStringify({
-      uri,
-      adapter: getSelectedAdapterName(),
-      elapsedMs: parseFloat(elapsed),
-      contentHash: result.contentHash,
-      authority: result.authority,
-      manifestVersion: result.manifest["hiri:version"],
-      warnings: result.warnings ?? [],
-      keyVerification: result.keyVerification ?? null,
-    }, true)}</pre>`;
+      document.getElementById("hood-content-resolve")!.innerHTML = `<pre>${escapeHTML(stableStringify({
+        uri,
+        adapter: getSelectedAdapterName(),
+        elapsedMs: parseFloat(elapsed),
+        privacyMode: privResult.privacyMode,
+        contentStatus: privResult.contentStatus,
+        verified: privResult.verified,
+        trustLevel: privResult.attestationResult?.trustLevel ?? null,
+        warnings: privResult.warnings,
+      }, true))}</pre>`;
+    } else {
+      const result = await resolve(uri, adapter, resolveOpts);
+      const elapsed = (performance.now() - startTime).toFixed(1);
+
+      addStep(stepsDiv, "Verify Signature", "Cryptographic verification passed", true);
+      if (result.manifest["hiri:chain"]) {
+        addStep(stepsDiv, "Walk Chain", `Depth=${result.manifest["hiri:chain"].depth}`, true);
+      }
+      addStep(stepsDiv, "Fetch Content", `hash=${result.contentHash.substring(0, 24)}...`, true);
+      addStep(stepsDiv, "Verify Content", "Content hash matches manifest", true);
+
+      // Display result
+      const contentStr = new TextDecoder().decode(result.content);
+      resultDiv.innerHTML = `
+        <div class="info-box success">
+          Resolution <strong>succeeded</strong> in ${elapsed}ms via ${getSelectedAdapterName()}
+          ${result.warnings && result.warnings.length > 0
+            ? `<br><span style="color:var(--yellow)">Warnings: ${result.warnings.join("; ")}</span>`
+            : ""}
+        </div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:0.8rem;margin-bottom:1rem;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
+          <span>Signature: <span style="color:var(--green)">✓ valid</span></span>
+          <span>Key: <span style="color:${result.keyVerification ? (result.keyVerification.keyStatus === "active" ? "var(--green)" : "var(--yellow)") : "var(--text-muted)"}">${result.keyVerification?.keyStatus ?? "direct"}</span></span>
+          <span>Revocation: <span style="color:var(--text-muted)">${result.keyVerification?.revocationStatus ?? "not-checked"}</span></span>
+          <span>Timestamp: <span style="color:var(--text-muted)">${result.keyVerification?.timestampVerification ?? "advisory-only"}</span></span>
+          ${getPrivacyBadges(result.manifest)}
+        </div>
+        <div class="panel">
+          <div class="panel-header">Verified Content (V${result.manifest["hiri:version"]})</div>
+          <div class="panel-body">
+            ${renderVerifiedContent(contentStr)}
+          </div>
+        </div>
+      `;
+
+      document.getElementById("hood-content-resolve")!.innerHTML = `<pre>${escapeHTML(stableStringify({
+        uri,
+        adapter: getSelectedAdapterName(),
+        elapsedMs: parseFloat(elapsed),
+        contentHash: result.contentHash,
+        authority: result.authority,
+        manifestVersion: result.manifest["hiri:version"],
+        warnings: result.warnings ?? [],
+        keyVerification: result.keyVerification ?? null,
+      }, true))}</pre>`;
+    }
   } catch (e) {
     const isResolutionError = e instanceof ResolutionError;
     if (isResolutionError) {
@@ -643,6 +684,7 @@ async function handleImport(): Promise<void> {
     importedManifestHash = result.manifestHash;
     importedUri = result.uri;
     importedPackageJson = json;
+    importedPrivacyMode = result.privacyMode ?? null;
 
     resultDiv.innerHTML = `
       <div class="info-box success">
@@ -677,6 +719,127 @@ async function getContentHashFromStorage(mHash: string): Promise<string | null> 
   } catch {
     return null;
   }
+}
+
+/** Check if the manifest in storage has a privacy block */
+function hasPrivacyBlock(): boolean {
+  const manifest = demoState.latestManifest?.manifest;
+  if (!manifest) return false;
+  return !!(manifest as Record<string, unknown>)["hiri:privacy"];
+}
+
+function privacyBadgeClass(mode: string): string {
+  const map: Record<string, string> = {
+    "public": "public",
+    "proof-of-possession": "pop",
+    "encrypted": "enc",
+    "selective-disclosure": "sd",
+    "anonymous": "anon",
+    "attestation": "attest",
+  };
+  return map[mode] ?? "";
+}
+
+function renderPrivacyContent(result: PrivacyAwareVerificationResult): string {
+  // Attestation — show claim, no content block
+  if (result.privacyMode === "attestation" && result.attestationResult) {
+    const attest = result.attestationResult;
+    return `
+      <div class="panel">
+        <div class="panel-header">Attestation (V${result.manifest["hiri:version"]})</div>
+        <div class="panel-body">
+          <div style="font-size:0.8rem;margin-bottom:0.5rem">
+            <span style="font-weight:600">Trust Level:</span>
+            <span style="color:${attest.trustLevel === "full" ? "var(--green)" : attest.trustLevel === "partial" ? "var(--yellow)" : "var(--red)"}">${attest.trustLevel}</span>
+          </div>
+          <div style="font-size:0.75rem;display:flex;flex-direction:column;gap:0.15rem">
+            <div>Attestation verified: ${attest.attestationVerified ? "✓" : "✗"}</div>
+            <div>Subject verified: ${attest.subjectVerified ? "✓" : "✗"}</div>
+            ${attest.stale ? `<div style="color:var(--yellow)">⚠ Attestation is stale</div>` : ""}
+          </div>
+          <details style="margin-top:0.5rem;font-size:0.7rem">
+            <summary style="cursor:pointer;color:var(--text-muted)">Raw manifest</summary>
+            <pre style="margin-top:0.25rem">${escapeHTML(stableStringify(result.manifest as unknown as Record<string, unknown>, true))}</pre>
+          </details>
+        </div>
+      </div>
+    `;
+  }
+
+  // Encrypted — ciphertext-verified or decrypted
+  if (result.privacyMode === "encrypted") {
+    const status = result.contentStatus;
+    return `
+      <div class="panel">
+        <div class="panel-header">Encrypted Content (V${result.manifest["hiri:version"]})</div>
+        <div class="panel-body">
+          <div style="font-size:0.8rem">${status === "decrypted-verified"
+            ? renderVerifiedContent(new TextDecoder().decode(result.decryptedContent!))
+            : `<span style="color:var(--text-muted)">Content is encrypted. Status: <strong>${status}</strong></span>`
+          }</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Selective disclosure
+  if (result.privacyMode === "selective-disclosure" && result.disclosedNQuads) {
+    return `
+      <div class="panel">
+        <div class="panel-header">Selective Disclosure (V${result.manifest["hiri:version"]})</div>
+        <div class="panel-body">
+          ${renderSDContentFromNQuads(result.disclosedNQuads)}
+        </div>
+      </div>
+    `;
+  }
+
+  // PoP — no content
+  if (result.privacyMode === "proof-of-possession") {
+    return `
+      <div class="panel">
+        <div class="panel-header">Proof of Possession (V${result.manifest["hiri:version"]})</div>
+        <div class="panel-body">
+          <span style="font-size:0.8rem;color:var(--text-muted)">Content held privately. Custody asserted by publisher.</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // Fallback — show raw manifest
+  return `
+    <div class="panel">
+      <div class="panel-header">Verified (V${result.manifest["hiri:version"]})</div>
+      <div class="panel-body">
+        <pre>${escapeHTML(stableStringify(result.manifest as unknown as Record<string, unknown>, true))}</pre>
+      </div>
+    </div>
+  `;
+}
+
+function renderSDContentFromNQuads(nquads: string[]): string {
+  const grouped = new Map<string, Array<{ predicate: string; object: string }>>();
+  for (const stmt of nquads) {
+    const parsed = parseNQuad(stmt);
+    if (!parsed) continue;
+    if (!grouped.has(parsed.subject)) grouped.set(parsed.subject, []);
+    grouped.get(parsed.subject)!.push({ predicate: parsed.predicate, object: parsed.object });
+  }
+
+  let html = `<div style="font-size:0.8rem;font-weight:600;margin-bottom:0.5rem">Disclosed Statements</div>`;
+  for (const [subject, triples] of grouped) {
+    html += `<div style="margin-bottom:0.5rem">`;
+    html += `<div style="font-weight:600;color:var(--accent);margin-bottom:0.15rem">${escapeHTML(subject)}</div>`;
+    for (const { predicate, object } of triples) {
+      html += `<div style="padding-left:1rem;display:flex;gap:0.5rem;font-size:0.75rem">`;
+      html += `<span style="color:var(--text-muted);min-width:8rem">${escapeHTML(predicate)}</span>`;
+      html += `<span>→</span>`;
+      html += `<span>${escapeHTML(object)}</span>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  return html;
 }
 
 function escapeHTML(str: string): string {
