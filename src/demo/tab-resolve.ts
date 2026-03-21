@@ -30,6 +30,7 @@ let container: HTMLElement;
 let importedPublicKey: Uint8Array | null = null;
 let importedManifestHash: string | null = null;
 let importedUri: string | null = null;
+let importedPackageJson: string | null = null;
 
 export function initResolveTab(el: HTMLElement): void {
   container = el;
@@ -454,14 +455,22 @@ async function injectFault(type: "content" | "signature" | "remove"): Promise<vo
 }
 
 async function resetStorage(): Promise<void> {
-  // Rebuild storage from manifest entries
   demoState.storage.clear();
-  for (const entry of demoState.manifests) {
-    await demoState.storage.put(entry.manifestHash, new TextEncoder().encode(stableStringify(entry.manifest)));
-    await demoState.storage.put(entry.contentHash, entry.contentBytes);
+
+  if (importedPackageJson) {
+    // Re-import from saved package (imported data isn't in demoState.manifests)
+    await importPackage(importedPackageJson);
+    document.getElementById("fault-result")!.innerHTML =
+      `<div class="info-box success">Storage reset to clean state (re-imported package).</div>`;
+  } else {
+    // Rebuild from local manifest entries
+    for (const entry of demoState.manifests) {
+      await demoState.storage.put(entry.manifestHash, new TextEncoder().encode(stableStringify(entry.manifest)));
+      await demoState.storage.put(entry.contentHash, entry.contentBytes);
+    }
+    document.getElementById("fault-result")!.innerHTML =
+      `<div class="info-box success">Storage reset to clean state.</div>`;
   }
-  document.getElementById("fault-result")!.innerHTML =
-    `<div class="info-box success">Storage reset to clean state.</div>`;
 }
 
 function addStep(container: HTMLElement, label: string, detail: string, success: boolean): void {
@@ -633,6 +642,7 @@ async function handleImport(): Promise<void> {
     importedPublicKey = result.publicKey;
     importedManifestHash = result.manifestHash;
     importedUri = result.uri;
+    importedPackageJson = json;
 
     resultDiv.innerHTML = `
       <div class="info-box success">
