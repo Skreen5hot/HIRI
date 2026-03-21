@@ -575,10 +575,10 @@ async function importPackage(json: string): Promise<ImportResult> {
     await demoState.storage.put(entry.hash, bytes);
     totalBytes += bytes.length;
 
-    // Heuristic: manifests are JSON with "@type" or "hiri:signature"
+    // Classify: only hiri:signature + hiri:version together identify a manifest
     try {
       const parsed = JSON.parse(new TextDecoder().decode(bytes));
-      if (parsed["@type"] || parsed["hiri:signature"]) {
+      if (parsed["hiri:signature"] && parsed["hiri:version"]) {
         manifestCount++;
       } else {
         contentCount++;
