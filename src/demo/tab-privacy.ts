@@ -737,14 +737,15 @@ let sdStorage: InMemoryStorageAdapter | null = null;
 let sdSalt: Uint8Array | null = null;
 let sdHmacTags: Uint8Array[] = [];
 let sdStatementHashes: Uint8Array[] = [];
+/** Per-recipient disclosure indices, built from UI checkboxes */
+const sdRecipientDisclosure = new Map<string, number[]>();
 
 function wireSDPanel(): void {
   document.getElementById("btn-sd-parse")!.addEventListener("click", handleSDParse);
   document.getElementById("btn-sd-build")!.addEventListener("click", handleSDBuild);
   document.getElementById("btn-sd-export")!.addEventListener("click", () => handlePrivacyExport("selective-disclosure", sdStorage, sdManifestHash, sdManifest));
   document.getElementById("sd-recipients")!.innerHTML = `
-    <div style="font-size:0.75rem;margin-bottom:0.25rem">Alice: mandatory + statements 2,3 (name, job, email)</div>
-    <div style="font-size:0.75rem">Bob: mandatory only (name only)</div>
+    <div style="font-size:0.75rem;color:var(--text-muted)">Parse statements first to configure disclosure per recipient.</div>
   `;
 }
 
@@ -778,6 +779,73 @@ function handleSDParse(): void {
     <div style="font-size:0.8rem;color:var(--green)">✓ ${sdStatements.length} statements parsed</div>
   `;
   (document.getElementById("btn-sd-build") as HTMLButtonElement).disabled = false;
+
+  // Render per-recipient disclosure checkboxes
+  renderDisclosureConfig();
+}
+
+function renderDisclosureConfig(): void {
+  const recipientsDiv = document.getElementById("sd-recipients")!;
+  const recipients = ["alice", "bob"];
+
+  // Default: Alice gets all non-mandatory, Bob gets mandatory only
+  for (const r of recipients) {
+    if (!sdRecipientDisclosure.has(r)) {
+      sdRecipientDisclosure.set(r, r === "alice"
+        ? sdStatements.map((_, i) => i) // all statements
+        : [...sdMandatoryIndices]        // mandatory only
+      );
+    }
+  }
+
+  // Get friendly labels for non-mandatory statements
+  const nonMandatory = sdStatements
+    .map((stmt, i) => ({ stmt, i }))
+    .filter(({ i }) => !sdMandatoryIndices.includes(i));
+
+  let html = "";
+  for (const recipient of recipients) {
+    const selected = sdRecipientDisclosure.get(recipient) ?? [];
+    const label = recipient.charAt(0).toUpperCase() + recipient.slice(1);
+
+    html += `<div style="margin-bottom:0.5rem;padding:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">`;
+    html += `<div style="font-size:0.8rem;font-weight:600;margin-bottom:0.25rem">${label}</div>`;
+    html += `<div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:0.25rem">mandatory (always included)</div>`;
+
+    if (nonMandatory.length > 0) {
+      html += `<div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:0.15rem">additional disclosure:</div>`;
+      for (const { stmt, i } of nonMandatory) {
+        const parsed = parseNQuad(stmt);
+        const friendlyLabel = parsed ? `${parsed.predicate} → ${parsed.object}` : stmt;
+        const checked = selected.includes(i) ? "checked" : "";
+        html += `
+          <label style="display:flex;align-items:center;gap:0.25rem;font-size:0.75rem;margin-bottom:0.1rem;cursor:pointer">
+            <input type="checkbox" class="sd-disclosure-cb" data-recipient="${recipient}" data-idx="${i}" ${checked}>
+            <span>${escapeHTML(friendlyLabel)}</span>
+          </label>
+        `;
+      }
+    }
+
+    html += `</div>`;
+  }
+
+  recipientsDiv.innerHTML = html;
+
+  // Wire disclosure checkboxes
+  recipientsDiv.querySelectorAll(".sd-disclosure-cb").forEach(cb => {
+    cb.addEventListener("change", () => {
+      for (const recipient of recipients) {
+        const indices = [...sdMandatoryIndices]; // always include mandatory
+        recipientsDiv.querySelectorAll(`.sd-disclosure-cb[data-recipient="${recipient}"]:checked`).forEach(checked => {
+          const idx = parseInt((checked as HTMLInputElement).dataset.idx!);
+          if (!indices.includes(idx)) indices.push(idx);
+        });
+        indices.sort((a, b) => a - b);
+        sdRecipientDisclosure.set(recipient, indices);
+      }
+    });
+  });
 }
 
 async function handleSDBuild(): Promise<void> {
@@ -794,14 +862,13 @@ async function handleSDBuild(): Promise<void> {
     const hmacKey = globalThis.crypto.getRandomValues(new Uint8Array(32));
     sdHmacTags = generateHmacTags(sdStatements, hmacKey, sdSalt);
 
-    // Encrypt HMAC key for recipients
-    // Alice gets statements 0,1,2,3; Bob gets "all" (but effectively only sees mandatory)
+    // Encrypt HMAC key for recipients — disclosure configured via UI checkboxes
     const aliceRecipient = demoState.privacyRecipients.find(r => r.id === "alice");
     const bobRecipient = demoState.privacyRecipients.find(r => r.id === "bob");
 
     const disclosureMap = new Map<string, number[] | "all">();
-    if (aliceRecipient) disclosureMap.set("alice", [0, 1, 2, 3]);
-    if (bobRecipient) disclosureMap.set("bob", sdMandatoryIndices);
+    if (aliceRecipient) disclosureMap.set("alice", sdRecipientDisclosure.get("alice") ?? sdMandatoryIndices);
+    if (bobRecipient) disclosureMap.set("bob", sdRecipientDisclosure.get("bob") ?? sdMandatoryIndices);
 
     const recipientKeys = new Map<string, Uint8Array>();
     if (aliceRecipient) recipientKeys.set("alice", aliceRecipient.x25519Public);
@@ -887,7 +954,7 @@ async function handleSDBuild(): Promise<void> {
           <div>Index root: <code>${indexRoot.substring(0, 32)}...</code></div>
           <div>Statements: ${sdStatements.length} total, ${sdMandatoryIndices.length} mandatory</div>
           <div>HMAC tags: ${sdHmacTags.length} tags generated</div>
-          <div>Recipients: ${disclosureMap.size} (Alice: [0,1,2,3], Bob: mandatory only)</div>
+          <div>Recipients: ${disclosureMap.size} (${Array.from(disclosureMap.entries()).map(([id, indices]) => `${id}: [${Array.isArray(indices) ? (indices as number[]).join(",") : indices}]`).join(", ")})</div>
         </div>
       </div>
     `;
@@ -947,11 +1014,11 @@ async function handleSDVerify(perspective: string): Promise<void> {
 
     // Determine disclosed statements for this perspective
     let disclosedStatements: string[];
-    if (perspective === "alice") {
-      disclosedStatements = [0, 1, 2, 3].filter(i => i < sdStatements.length).map(i => sdStatements[i]);
-    } else {
-      // Unauthorized and Bob: mandatory only
+    if (perspective === "unauth") {
       disclosedStatements = sdMandatoryIndices.map(i => sdStatements[i]);
+    } else {
+      const indices = sdRecipientDisclosure.get(perspective) ?? sdMandatoryIndices;
+      disclosedStatements = indices.filter(i => i < sdStatements.length).map(i => sdStatements[i]);
     }
 
     resultDiv.innerHTML = `
