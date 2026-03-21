@@ -417,6 +417,7 @@ function renderEncryptedPanel(): string {
         </div>
         <div class="action-bar">
           <button class="btn btn-primary" id="btn-enc-encrypt">Encrypt & Sign</button>
+          <button class="btn" id="btn-enc-export" disabled>Export Package</button>
         </div>
         <div id="enc-hashes" style="margin-top:0.75rem"></div>
         <div id="enc-resolve-section" style="margin-top:0.75rem;display:none">
@@ -436,6 +437,7 @@ let encStorage: InMemoryStorageAdapter | null = null;
 function wireEncryptedPanel(): void {
   document.getElementById("enc-recipients")!.innerHTML = recipientListHTML(true);
   document.getElementById("btn-enc-encrypt")!.addEventListener("click", handleEncrypt);
+  document.getElementById("btn-enc-export")!.addEventListener("click", () => handlePrivacyExport("encrypted", encStorage, encManifestHash, encManifest));
   document.getElementById("btn-enc-add-recipient")!.addEventListener("click", () => {
     const name = `recipient-${demoState.privacyRecipients.length + 1}`;
     const kp = generateX25519Keypair();
@@ -503,6 +505,9 @@ async function handleEncrypt(): Promise<void> {
         </div>
       </div>
     `;
+
+    // Enable export
+    (document.getElementById("btn-enc-export") as HTMLButtonElement).disabled = false;
 
     // Show resolve perspectives
     const section = document.getElementById("enc-resolve-section")!;
@@ -642,6 +647,7 @@ function renderSDPanel(): string {
         <div class="action-bar">
           <button class="btn" id="btn-sd-parse">Parse Statements</button>
           <button class="btn btn-primary" id="btn-sd-build" disabled>Build Index & Sign</button>
+          <button class="btn" id="btn-sd-export" disabled>Export Package</button>
         </div>
 
         <div id="sd-index-result" style="margin-top:0.75rem"></div>
@@ -735,6 +741,7 @@ let sdStatementHashes: Uint8Array[] = [];
 function wireSDPanel(): void {
   document.getElementById("btn-sd-parse")!.addEventListener("click", handleSDParse);
   document.getElementById("btn-sd-build")!.addEventListener("click", handleSDBuild);
+  document.getElementById("btn-sd-export")!.addEventListener("click", () => handlePrivacyExport("selective-disclosure", sdStorage, sdManifestHash, sdManifest));
   document.getElementById("sd-recipients")!.innerHTML = `
     <div style="font-size:0.75rem;margin-bottom:0.25rem">Alice: mandatory + statements 2,3 (name, job, email)</div>
     <div style="font-size:0.75rem">Bob: mandatory only (name only)</div>
@@ -884,6 +891,9 @@ async function handleSDBuild(): Promise<void> {
         </div>
       </div>
     `;
+
+    // Enable export
+    (document.getElementById("btn-sd-export") as HTMLButtonElement).disabled = false;
 
     // Show verify section
     document.getElementById("sd-verify-section")!.style.display = "";
@@ -1223,6 +1233,7 @@ function renderAttestPanel(): string {
 
         <div class="action-bar" style="margin-top:0.75rem">
           <button class="btn btn-primary" id="btn-attest-sign">Sign Attestation</button>
+          <button class="btn" id="btn-attest-export" disabled>Export Package</button>
         </div>
         <div id="attest-result" style="margin-top:0.75rem"></div>
 
@@ -1251,6 +1262,7 @@ function renderAttestPanel(): string {
 }
 
 let attestManifest: SignedAttestationManifest | null = null;
+let attestManifestHash: string | null = null;
 let attestSubjectKeypair: SigningKey | null = null;
 let attestSubjectManifest: ResolutionManifest | null = null;
 let attestSubjectManifestHash: string | null = null;
@@ -1260,6 +1272,7 @@ let attestValidUntil: string = "";
 
 function wireAttestPanel(): void {
   document.getElementById("btn-attest-sign")!.addEventListener("click", handleAttestSign);
+  document.getElementById("btn-attest-export")!.addEventListener("click", () => handlePrivacyExport("attestation", attestStorage, attestManifestHash, attestManifest as unknown as ResolutionManifest));
 }
 
 async function handleAttestSign(): Promise<void> {
@@ -1329,7 +1342,7 @@ async function handleAttestSign(): Promise<void> {
     // Store
     attestStorage = new InMemoryStorageAdapter();
     const attestManifestBytes = new TextEncoder().encode(stableStringify(attestManifest as unknown as Record<string, unknown>));
-    const attestManifestHash = await crypto.hash(attestManifestBytes);
+    attestManifestHash = await crypto.hash(attestManifestBytes);
     await attestStorage.put(attestManifestHash, attestManifestBytes);
     await attestStorage.put(attestSubjectManifestHash, subjectManifestBytes);
     await attestStorage.put(subjectContentHash, subjectContent);
@@ -1357,6 +1370,9 @@ async function handleAttestSign(): Promise<void> {
         </div>
       </div>
     `;
+
+    // Enable export
+    (document.getElementById("btn-attest-export") as HTMLButtonElement).disabled = false;
 
     // Show verify section
     const verifySection = document.getElementById("attest-verify-section")!;
@@ -1472,6 +1488,126 @@ function wireHoodToggle(): void {
     toggle.addEventListener("click", () => {
       content.style.display = content.style.display === "none" ? "" : "none";
     });
+  }
+}
+
+interface HiriExportPackage {
+  version: 1;
+  authority: string;
+  uri: string;
+  publicKey: string;
+  entries: Array<{ hash: string; data: string }>;
+  privacyMode?: string;
+  keyDocumentHash?: string;
+}
+
+async function handlePrivacyExport(
+  mode: string,
+  storage: InMemoryStorageAdapter | null,
+  manifestHash: string | null,
+  manifest: ResolutionManifest | null,
+): Promise<void> {
+  if (!storage || !manifestHash || !manifest || !demoState.primaryKeypair) return;
+
+  try {
+    const entries: Array<{ hash: string; data: string }> = [];
+
+    // Add manifest
+    const manifestBytes = await storage.get(manifestHash);
+    if (manifestBytes) {
+      entries.push({ hash: manifestHash, data: bytesToBase64url(manifestBytes) });
+    }
+
+    // Add content blob (ciphertext, SD blob, or subject content)
+    const contentHash = (manifest as Record<string, unknown>)["hiri:content"]
+      ? ((manifest as Record<string, unknown>)["hiri:content"] as Record<string, unknown>).hash as string
+      : null;
+    if (contentHash) {
+      const contentBytes = await storage.get(contentHash);
+      if (contentBytes) {
+        entries.push({ hash: contentHash, data: bytesToBase64url(contentBytes) });
+      }
+    }
+
+    // For attestation: include subject manifest and content if available
+    if (mode === "attestation" && attestSubjectManifestHash) {
+      const subjectManifestBytes = await storage.get(attestSubjectManifestHash);
+      if (subjectManifestBytes) {
+        entries.push({ hash: attestSubjectManifestHash, data: bytesToBase64url(subjectManifestBytes) });
+
+        // Get subject content hash from subject manifest
+        const subjectManifest = JSON.parse(new TextDecoder().decode(subjectManifestBytes));
+        const subjectContentHash = subjectManifest["hiri:content"]?.hash;
+        if (subjectContentHash) {
+          const subjectContentBytes = await storage.get(subjectContentHash);
+          if (subjectContentBytes) {
+            entries.push({ hash: subjectContentHash, data: bytesToBase64url(subjectContentBytes) });
+          }
+        }
+      }
+    }
+
+    const pkg: HiriExportPackage = {
+      version: 1,
+      authority: demoState.authority,
+      uri: manifest["@id"],
+      publicKey: bytesToBase64url(demoState.primaryKeypair.publicKey),
+      entries,
+      privacyMode: mode,
+    };
+
+    // Include Key Document if present
+    if (demoState.keyDocument) {
+      const kdBytes = new TextEncoder().encode(stableStringify(demoState.keyDocument));
+      const kdHash = await crypto.hash(kdBytes);
+      entries.push({ hash: kdHash, data: bytesToBase64url(kdBytes) });
+      pkg.keyDocumentHash = kdHash;
+    }
+
+    const json = JSON.stringify(pkg);
+    const sizeKb = (json.length / 1024).toFixed(1);
+
+    try {
+      await navigator.clipboard.writeText(json);
+      showExportConfirmation(mode, `Package copied to clipboard (${sizeKb} KB)`);
+    } catch {
+      showExportFallback(mode, json);
+    }
+  } catch (e) {
+    showExportConfirmation(mode, `Export failed: ${(e as Error).message}`, true);
+  }
+}
+
+function showExportConfirmation(mode: string, message: string, isError = false): void {
+  const panelMap: Record<string, string> = {
+    "encrypted": "enc-hashes",
+    "selective-disclosure": "sd-index-result",
+    "attestation": "attest-result",
+  };
+  const targetId = panelMap[mode];
+  if (targetId) {
+    const el = document.getElementById(targetId);
+    if (el) {
+      el.innerHTML += `<div class="info-box ${isError ? "error" : "success"}" style="margin-top:0.5rem">${message}</div>`;
+    }
+  }
+}
+
+function showExportFallback(mode: string, json: string): void {
+  const panelMap: Record<string, string> = {
+    "encrypted": "enc-hashes",
+    "selective-disclosure": "sd-index-result",
+    "attestation": "attest-result",
+  };
+  const targetId = panelMap[mode];
+  if (targetId) {
+    const el = document.getElementById(targetId);
+    if (el) {
+      el.innerHTML += `
+        <div class="info-box warning" style="margin-top:0.5rem">Clipboard not available. Copy manually.</div>
+        <textarea class="form-input" rows="4" readonly style="font-size:0.7rem;margin-top:0.25rem">${json}</textarea>
+      `;
+    }
   }
 }
 
