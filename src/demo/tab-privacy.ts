@@ -944,6 +944,16 @@ async function handleSDVerify(perspective: string): Promise<void> {
     const result = await resolveWithPrivacy(uri, sdStorage, opts as Parameters<typeof resolveWithPrivacy>[2]);
 
     const canVerify = perspective !== "unauth";
+
+    // Determine disclosed statements for this perspective
+    let disclosedStatements: string[];
+    if (perspective === "alice") {
+      disclosedStatements = [0, 1, 2, 3].filter(i => i < sdStatements.length).map(i => sdStatements[i]);
+    } else {
+      // Unauthorized and Bob: mandatory only
+      disclosedStatements = sdMandatoryIndices.map(i => sdStatements[i]);
+    }
+
     resultDiv.innerHTML = `
       <div class="info-box ${result.verified ? "success" : "error"}">
         <div style="font-size:0.8rem;font-weight:600">${perspective === "unauth" ? "Unauthorized" : perspective.charAt(0).toUpperCase() + perspective.slice(1)}</div>
@@ -961,6 +971,10 @@ async function handleSDVerify(perspective: string): Promise<void> {
             ${result.warnings.map(w => `⚠ ${w}`).join("<br>")}
           </div>
         ` : ""}
+      </div>
+      <div style="margin-top:0.5rem;padding:0.75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
+        <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.5rem">Disclosed Statements</div>
+        ${renderFriendlyStatements(disclosedStatements, sdStatements.length)}
       </div>
     `;
   } catch (e) {
@@ -1625,4 +1639,66 @@ function bytesToBase64url(bytes: Uint8Array): string {
 
 function escapeHTML(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const NQUAD_PREFIXES: Record<string, string> = {
+  "http://schema.org/": "schema:",
+  "http://www.w3.org/1999/02/22-rdf-syntax-ns#": "rdf:",
+  "https://example.org/": "ex:",
+};
+
+function shortenURI(uri: string): string {
+  for (const [full, prefix] of Object.entries(NQUAD_PREFIXES)) {
+    if (uri.startsWith(full)) return prefix + uri.slice(full.length);
+  }
+  return uri;
+}
+
+function parseNQuad(nquad: string): { subject: string; predicate: string; object: string } | null {
+  const match = nquad.match(/^<([^>]+)>\s+<([^>]+)>\s+(?:<([^>]+)>|"([^"]*)")/);
+  if (!match) return null;
+  return {
+    subject: shortenURI(match[1]),
+    predicate: shortenURI(match[2]),
+    object: match[3] ? shortenURI(match[3]) : `"${match[4]}"`,
+  };
+}
+
+function renderFriendlyStatements(statements: string[], totalCount: number): string {
+  if (statements.length === 0) {
+    return `<div style="font-size:0.75rem;color:var(--text-muted)">No disclosed statements</div>`;
+  }
+
+  // Parse and group by subject
+  const grouped = new Map<string, Array<{ predicate: string; object: string }>>();
+  for (const stmt of statements) {
+    const parsed = parseNQuad(stmt);
+    if (!parsed) continue;
+    if (!grouped.has(parsed.subject)) grouped.set(parsed.subject, []);
+    grouped.get(parsed.subject)!.push({ predicate: parsed.predicate, object: parsed.object });
+  }
+
+  const withheld = totalCount - statements.length;
+  let html = "";
+
+  for (const [subject, triples] of grouped) {
+    html += `<div style="margin-bottom:0.5rem">`;
+    html += `<div style="font-size:0.8rem;font-weight:600;color:var(--accent);margin-bottom:0.15rem">${escapeHTML(subject)}</div>`;
+    for (const { predicate, object } of triples) {
+      html += `<div style="font-size:0.75rem;padding-left:1rem;display:flex;gap:0.5rem">`;
+      html += `<span style="color:var(--text-muted);min-width:8rem">${escapeHTML(predicate)}</span>`;
+      html += `<span>→</span>`;
+      html += `<span>${escapeHTML(object)}</span>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  if (withheld > 0) {
+    html += `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">`;
+    html += `Withheld: ${withheld} statement${withheld > 1 ? "s" : ""} (hashes only)`;
+    html += `</div>`;
+  }
+
+  return html;
 }
