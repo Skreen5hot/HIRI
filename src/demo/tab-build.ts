@@ -71,6 +71,7 @@ function render(): void {
           <button class="btn btn-primary" id="btn-sign">Draft & Sign (V1)</button>
           <button class="btn" id="btn-update" disabled>Update & Chain (V2)</button>
           <button class="btn" id="btn-verify-chain" disabled>Verify Chain</button>
+          <button class="btn" id="btn-export" disabled>Export Package</button>
         </div>
       </div>
       <div>
@@ -116,6 +117,7 @@ function checkGate(): void {
   document.getElementById("btn-sign")!.addEventListener("click", handleSign);
   document.getElementById("btn-update")!.addEventListener("click", handleUpdate);
   document.getElementById("btn-verify-chain")!.addEventListener("click", handleVerifyChain);
+  document.getElementById("btn-export")!.addEventListener("click", handleExport);
 
   // Restore UI state if manifests already exist (prevents duplicate V1 on tab switch)
   if (demoState.manifests.length > 0) {
@@ -124,6 +126,8 @@ function checkGate(): void {
     btnSign.textContent = "V1 Signed";
 
     (document.getElementById("btn-update") as HTMLButtonElement).disabled = false;
+
+    (document.getElementById("btn-export") as HTMLButtonElement).disabled = false;
 
     if (demoState.manifests.length >= 2) {
       (document.getElementById("btn-verify-chain") as HTMLButtonElement).disabled = false;
@@ -252,6 +256,7 @@ async function handleSign(): Promise<void> {
 
     btn.textContent = "V1 Signed";
     (document.getElementById("btn-update") as HTMLButtonElement).disabled = false;
+    (document.getElementById("btn-export") as HTMLButtonElement).disabled = false;
 
     // Update transparency
     document.getElementById("hood-content-build")!.innerHTML =
@@ -481,6 +486,125 @@ function renderChainVisualization(): void {
       <div class="panel-body">${chainHtml}</div>
     </div>
   `;
+}
+
+/** Encode bytes as base64url without padding (RFC 4648 §5). */
+function base64urlEncode(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+interface HiriExportPackage {
+  version: 1;
+  authority: string;
+  uri: string;
+  publicKey: string;
+  entries: Array<{ hash: string; data: string }>;
+  privacyMode?: string;
+  keyDocumentHash?: string;
+}
+
+async function exportPackage(): Promise<string> {
+  const entries: Array<{ hash: string; data: string }> = [];
+
+  for (const manifestEntry of demoState.manifests) {
+    // Add manifest bytes
+    const manifestBytes = new TextEncoder().encode(
+      stableStringify(manifestEntry.manifest)
+    );
+    entries.push({
+      hash: manifestEntry.manifestHash,
+      data: base64urlEncode(manifestBytes),
+    });
+
+    // Add content bytes
+    entries.push({
+      hash: manifestEntry.contentHash,
+      data: base64urlEncode(manifestEntry.contentBytes),
+    });
+  }
+
+  // Include delta blobs from storage (they may exist for chained manifests)
+  for (const manifestEntry of demoState.manifests) {
+    const delta = (manifestEntry.manifest as Record<string, unknown>)["hiri:delta"] as
+      { hash?: string } | undefined;
+    if (delta?.hash) {
+      const deltaBytes = await demoState.storage.get(delta.hash);
+      if (deltaBytes && deltaBytes.length > 0) {
+        entries.push({
+          hash: delta.hash,
+          data: base64urlEncode(deltaBytes),
+        });
+      }
+    }
+  }
+
+  const latestManifest = demoState.latestManifest!;
+  const pkg: HiriExportPackage = {
+    version: 1,
+    authority: demoState.authority,
+    uri: latestManifest.manifest["@id"],
+    publicKey: base64urlEncode(demoState.primaryKeypair!.publicKey),
+    entries,
+  };
+
+  // Detect privacy mode if present
+  const privacy = (latestManifest.manifest as Record<string, unknown>)["hiri:privacy"];
+  if (privacy && typeof privacy === "object" && "mode" in (privacy as Record<string, unknown>)) {
+    pkg.privacyMode = (privacy as Record<string, unknown>).mode as string;
+  }
+
+  // Include Key Document if present (key rotation scenario)
+  if (demoState.keyDocument) {
+    const kdBytes = new TextEncoder().encode(stableStringify(demoState.keyDocument));
+    const kdHash = await crypto.hash(kdBytes);
+    entries.push({ hash: kdHash, data: base64urlEncode(kdBytes) });
+    pkg.keyDocumentHash = kdHash;
+  }
+
+  return JSON.stringify(pkg);
+}
+
+async function handleExport(): Promise<void> {
+  if (demoState.manifests.length === 0) return;
+
+  const btn = document.getElementById("btn-export") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "Exporting...";
+
+  try {
+    const json = await exportPackage();
+    const manifestCount = demoState.manifests.length;
+    const sizeKb = (json.length / 1024).toFixed(1);
+
+    try {
+      await navigator.clipboard.writeText(json);
+      document.getElementById("hood-content-build")!.innerHTML =
+        `<div class="info-box success">Package copied to clipboard (${sizeKb} KB, ${manifestCount} manifest${manifestCount > 1 ? "s" : ""})</div>`;
+    } catch {
+      // Fallback: show JSON in a textarea for manual copy
+      document.getElementById("hood-content-build")!.innerHTML = `
+        <div class="info-box warning" style="margin-bottom:0.5rem">Clipboard not available. Copy the package below manually.</div>
+        <textarea class="form-input" rows="6" readonly style="font-size:0.7rem;font-family:var(--font-mono)">${json}</textarea>
+      `;
+      document.getElementById("hood-content-build")!.classList.add("open");
+    }
+
+    btn.textContent = "Exported";
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = "Export Package";
+    }, 2000);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Export Package";
+    document.getElementById("hood-content-build")!.innerHTML =
+      `<div class="info-box error">Export failed: ${(e as Error).message}</div>`;
+    document.getElementById("hood-content-build")!.classList.add("open");
+  }
 }
 
 /**

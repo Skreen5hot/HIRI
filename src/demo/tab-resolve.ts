@@ -27,6 +27,9 @@ import type { ResolveOptions } from "../kernel/resolve.js";
 const crypto = defaultCryptoProvider;
 
 let container: HTMLElement;
+let importedPublicKey: Uint8Array | null = null;
+let importedManifestHash: string | null = null;
+let importedUri: string | null = null;
 
 export function initResolveTab(el: HTMLElement): void {
   container = el;
@@ -35,6 +38,20 @@ export function initResolveTab(el: HTMLElement): void {
 
 function render(): void {
   container.innerHTML = `
+    <div id="import-section" class="panel" style="margin-bottom:1rem">
+      <div class="panel-header">Import Package</div>
+      <div class="panel-body">
+        <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:0.5rem">
+          Paste a HIRI export package from another session to verify independently.
+        </p>
+        <textarea class="form-input" id="import-input" rows="3"
+          placeholder="Paste export package JSON here..."></textarea>
+        <div class="action-bar" style="margin-top:0.5rem">
+          <button class="btn btn-primary" id="btn-import">Import & Load</button>
+        </div>
+        <div id="import-result" style="margin-top:0.5rem"></div>
+      </div>
+    </div>
     <div id="resolve-gate"></div>
     <div id="resolve-main" style="display:none">
       <div class="panel">
@@ -93,24 +110,34 @@ function render(): void {
     </div>
   `;
 
+  // Wire import button (always available, regardless of gate)
+  document.getElementById("btn-import")!.addEventListener("click", handleImport);
+
   checkGate();
 }
 
 function checkGate(): void {
   const gate = document.getElementById("resolve-gate")!;
-  if (demoState.manifests.length === 0 || !demoState.primaryKeypair) {
-    gate.innerHTML = `<div class="info-box info">Create signed content in Tab B, then resolve URIs here.</div>`;
+  const hasLocalData = demoState.manifests.length > 0 && demoState.primaryKeypair;
+  const hasImportedData = importedPublicKey && importedManifestHash;
+
+  if (!hasLocalData && !hasImportedData) {
+    gate.innerHTML = `<div class="info-box info">Create signed content in Tab B, or import a package above.</div>`;
     return;
   }
 
   gate.innerHTML = "";
   document.getElementById("resolve-main")!.style.display = "block";
 
-  // Pre-fill URI
-  const latestManifest = demoState.latestManifest;
-  if (latestManifest) {
-    (document.getElementById("resolve-uri") as HTMLInputElement).value =
-      latestManifest.manifest["@id"];
+  // Pre-fill URI from local data or import
+  if (importedUri) {
+    (document.getElementById("resolve-uri") as HTMLInputElement).value = importedUri;
+  } else {
+    const latestManifest = demoState.latestManifest;
+    if (latestManifest) {
+      (document.getElementById("resolve-uri") as HTMLInputElement).value =
+        latestManifest.manifest["@id"];
+    }
   }
 
   // Wire events
@@ -214,21 +241,21 @@ async function handleResolve(): Promise<void> {
 
     addStep(stepsDiv, "Derive Authority", `From genesis public key`, true);
 
-    // Get adapter and latest manifest hash
+    // Get adapter and resolve context (local or imported)
     const adapter = getSelectedAdapter();
-    const latestManifest = demoState.latestManifest;
-    if (!latestManifest) throw new Error("No manifest available");
+    const publicKey = importedPublicKey ?? demoState.primaryKeypair?.publicKey;
+    const manifestHash = importedManifestHash ?? demoState.latestManifest?.manifestHash;
+    if (!publicKey || !manifestHash) throw new Error("No manifest available");
 
-    const keypair = demoState.primaryKeypair!;
     const startTime = performance.now();
 
-    addStep(stepsDiv, "Fetch Manifest", `hash=${latestManifest.manifestHash.substring(0, 24)}...`, true);
+    addStep(stepsDiv, "Fetch Manifest", `hash=${manifestHash.substring(0, 24)}...`, true);
     addStep(stepsDiv, "Verify Hash", "Comparing stored vs computed hash", true);
 
     const result = await resolve(uri, adapter, {
       crypto,
-      publicKey: keypair.publicKey,
-      manifestHash: latestManifest.manifestHash,
+      publicKey,
+      manifestHash,
       ...(demoState.keyDocument ? {
         keyDocument: demoState.keyDocument,
         verificationTime: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
@@ -299,7 +326,9 @@ async function handleResolve(): Promise<void> {
 
 async function handleProveIdentical(): Promise<void> {
   const uri = (document.getElementById("resolve-uri") as HTMLInputElement).value.trim();
-  if (!uri || demoState.manifests.length === 0 || !demoState.primaryKeypair) return;
+  const publicKey = importedPublicKey ?? demoState.primaryKeypair?.publicKey;
+  const manifestHash = importedManifestHash ?? demoState.latestManifest?.manifestHash;
+  if (!uri || !publicKey || !manifestHash) return;
 
   const btn = document.getElementById("btn-prove-identical") as HTMLButtonElement;
   btn.disabled = true;
@@ -308,12 +337,10 @@ async function handleProveIdentical(): Promise<void> {
   const proofDiv = document.getElementById("identical-proof")!;
 
   try {
-    const latestManifest = demoState.latestManifest!;
-    const keypair = demoState.primaryKeypair!;
     const resolveOpts = {
       crypto,
-      publicKey: keypair.publicKey,
-      manifestHash: latestManifest.manifestHash,
+      publicKey,
+      manifestHash,
       ...(demoState.keyDocument ? {
         keyDocument: demoState.keyDocument,
         verificationTime: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
@@ -374,8 +401,11 @@ async function handleProveIdentical(): Promise<void> {
 
 async function injectFault(type: "content" | "signature" | "remove"): Promise<void> {
   const faultDiv = document.getElementById("fault-result")!;
-  const latestManifest = demoState.latestManifest;
-  if (!latestManifest) {
+  const manifestHash = importedManifestHash ?? demoState.latestManifest?.manifestHash;
+  const contentHash = importedManifestHash
+    ? await getContentHashFromStorage(importedManifestHash)
+    : demoState.latestManifest?.contentHash;
+  if (!manifestHash || !contentHash) {
     faultDiv.innerHTML = `<div class="info-box warning">No manifest available.</div>`;
     return;
   }
@@ -384,18 +414,18 @@ async function injectFault(type: "content" | "signature" | "remove"): Promise<vo
     switch (type) {
       case "content": {
         // Flip one byte in stored content
-        const contentBytes = await demoState.storage.get(latestManifest.contentHash);
+        const contentBytes = await demoState.storage.get(contentHash);
         if (contentBytes) {
           const corrupted = new Uint8Array(contentBytes);
           corrupted[0] = corrupted[0] ^ 0xff; // Flip first byte
-          await demoState.storage.put(latestManifest.contentHash, corrupted);
+          await demoState.storage.put(contentHash, corrupted);
           faultDiv.innerHTML = `<div class="info-box warning">Content byte 0 flipped. Re-resolve to see the error.</div>`;
         }
         break;
       }
       case "signature": {
         // Corrupt the manifest's signature bytes
-        const manifestBytes = await demoState.storage.get(latestManifest.manifestHash);
+        const manifestBytes = await demoState.storage.get(manifestHash);
         if (manifestBytes) {
           const manifestStr = new TextDecoder().decode(manifestBytes);
           const manifest = JSON.parse(manifestStr);
@@ -405,7 +435,7 @@ async function injectFault(type: "content" | "signature" | "remove"): Promise<vo
             sig.substring(0, sig.length - 1) + (sig[sig.length - 1] === "a" ? "b" : "a");
           const corruptedBytes = new TextEncoder().encode(stableStringify(manifest));
           // Re-hash and re-store with same hash key (hash won't match now)
-          await demoState.storage.put(latestManifest.manifestHash, corruptedBytes);
+          await demoState.storage.put(manifestHash, corruptedBytes);
           faultDiv.innerHTML = `<div class="info-box warning">Signature corrupted. Re-resolve to see the error.</div>`;
         }
         break;
@@ -413,7 +443,7 @@ async function injectFault(type: "content" | "signature" | "remove"): Promise<vo
       case "remove": {
         // Remove manifest from storage by storing null-length
         // We can't truly "remove" from InMemoryStorageAdapter, so store empty
-        await demoState.storage.put(latestManifest.manifestHash, new Uint8Array(0));
+        await demoState.storage.put(manifestHash, new Uint8Array(0));
         faultDiv.innerHTML = `<div class="info-box warning">Manifest zeroed out. Re-resolve to see the error.</div>`;
         break;
       }
@@ -444,6 +474,199 @@ function addStep(container: HTMLElement, label: string, detail: string, success:
       <span style="color:var(--text-muted)">${detail}</span>
     </div>
   `;
+}
+
+/** Decode base64url (no padding) to Uint8Array. */
+function base64urlDecode(str: string): Uint8Array {
+  // Convert base64url to base64
+  let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4 !== 0) base64 += "=";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+interface HiriExportPackage {
+  version: 1;
+  authority: string;
+  uri: string;
+  publicKey: string;
+  entries: Array<{ hash: string; data: string }>;
+  privacyMode?: string;
+  keyDocumentHash?: string;
+}
+
+interface ImportResult {
+  authority: string;
+  uri: string;
+  publicKey: Uint8Array;
+  manifestHash: string;
+  privacyMode?: string;
+  manifestCount: number;
+  contentCount: number;
+  totalBytes: number;
+}
+
+function findManifestHash(entries: Array<{ hash: string; data: string }>): string {
+  let headHash = entries[0].hash;
+  let headVersion = 0;
+
+  for (const entry of entries) {
+    try {
+      const parsed = JSON.parse(
+        new TextDecoder().decode(base64urlDecode(entry.data))
+      );
+      if (parsed["hiri:signature"] && parsed["hiri:version"]) {
+        if (Number(parsed["hiri:version"]) > headVersion) {
+          headVersion = Number(parsed["hiri:version"]);
+          headHash = entry.hash;
+        }
+      }
+    } catch {
+      // Not JSON — skip (binary content)
+    }
+  }
+
+  return headHash;
+}
+
+async function importPackage(json: string): Promise<ImportResult> {
+  // Trim and strip outer quotes if pasted with them
+  let trimmed = json.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    trimmed = trimmed.slice(1, -1);
+  }
+
+  const pkg = JSON.parse(trimmed) as HiriExportPackage;
+
+  // Validate structure
+  if (pkg.version !== 1) throw new Error(`Unsupported package version: ${pkg.version}`);
+  if (!pkg.authority || !pkg.uri || !pkg.publicKey || !Array.isArray(pkg.entries)) {
+    throw new Error("Invalid package structure");
+  }
+  if (pkg.entries.length === 0) throw new Error("Package contains no entries");
+
+  // Decode public key
+  const publicKey = base64urlDecode(pkg.publicKey);
+  if (publicKey.length !== 32) throw new Error(`Invalid public key length: ${publicKey.length}`);
+
+  // Store entries with integrity check
+  let manifestCount = 0;
+  let contentCount = 0;
+  let totalBytes = 0;
+
+  for (const entry of pkg.entries) {
+    const bytes = base64urlDecode(entry.data);
+    // INVARIANT: crypto.hash() returns "sha256:<hex>" format, matching the
+    // declared hash in pkg.entries[].hash. If the demo adopts CIDv1 addressing,
+    // this comparison must be updated.
+    const computedHash = await crypto.hash(bytes);
+
+    if (computedHash !== entry.hash) {
+      throw new Error(
+        `Integrity check failed for ${entry.hash.substring(0, 24)}... ` +
+        `(computed ${computedHash.substring(0, 24)}...)`
+      );
+    }
+
+    await demoState.storage.put(entry.hash, bytes);
+    totalBytes += bytes.length;
+
+    // Heuristic: manifests are JSON with "@type" or "hiri:signature"
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(bytes));
+      if (parsed["@type"] || parsed["hiri:signature"]) {
+        manifestCount++;
+      } else {
+        contentCount++;
+      }
+    } catch {
+      contentCount++; // Binary content (e.g., ciphertext)
+    }
+  }
+
+  // Restore Key Document if present (key rotation scenario)
+  if (pkg.keyDocumentHash) {
+    const kdBytes = await demoState.storage.get(pkg.keyDocumentHash);
+    if (kdBytes) {
+      const keyDocument = JSON.parse(new TextDecoder().decode(kdBytes));
+      demoState.keyDocument = keyDocument;
+    }
+  }
+
+  const headManifestHash = findManifestHash(pkg.entries);
+
+  return {
+    authority: pkg.authority,
+    uri: pkg.uri,
+    publicKey,
+    manifestHash: headManifestHash,
+    privacyMode: pkg.privacyMode,
+    manifestCount,
+    contentCount,
+    totalBytes,
+  };
+}
+
+async function handleImport(): Promise<void> {
+  const input = document.getElementById("import-input") as HTMLTextAreaElement;
+  const resultDiv = document.getElementById("import-result")!;
+  const json = input.value.trim();
+
+  if (!json) {
+    resultDiv.innerHTML = `<div class="info-box warning">Paste a package first.</div>`;
+    return;
+  }
+
+  const btn = document.getElementById("btn-import") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "Importing...";
+
+  try {
+    const result = await importPackage(json);
+    const sizeKb = (result.totalBytes / 1024).toFixed(1);
+
+    // Store import state for resolver
+    importedPublicKey = result.publicKey;
+    importedManifestHash = result.manifestHash;
+    importedUri = result.uri;
+
+    resultDiv.innerHTML = `
+      <div class="info-box success">
+        Imported: ${result.manifestCount} manifest${result.manifestCount > 1 ? "s" : ""},
+        ${result.contentCount} content blob${result.contentCount > 1 ? "s" : ""}
+        (${sizeKb} KB)<br>
+        <span style="color:var(--text-muted);font-size:0.75rem">
+          Authority: <code>${result.authority.substring(0, 32)}...</code><br>
+          URI auto-populated. Click Resolve.
+        </span>
+      </div>
+    `;
+
+    btn.textContent = "Imported";
+
+    // Re-run gate check to unlock resolver
+    checkGate();
+  } catch (e) {
+    resultDiv.innerHTML = `<div class="info-box error">Import failed: ${(e as Error).message}</div>`;
+    btn.disabled = false;
+    btn.textContent = "Import & Load";
+  }
+}
+
+/** Extract content hash from a stored manifest (for fault injection on imported data). */
+async function getContentHashFromStorage(mHash: string): Promise<string | null> {
+  const bytes = await demoState.storage.get(mHash);
+  if (!bytes || bytes.length === 0) return null;
+  try {
+    const manifest = JSON.parse(new TextDecoder().decode(bytes));
+    return manifest["hiri:content"]?.hash ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Privacy badge detection for resolved manifests
