@@ -458,11 +458,24 @@ async function injectFault(type: "content" | "signature" | "remove"): Promise<vo
         // Flip one byte in stored content
         const contentBytes = await demoState.storage.get(contentHash);
         if (contentBytes && contentBytes.length > 0) {
+          const originalByte0 = contentBytes[0];
           const corrupted = new Uint8Array(contentBytes.length);
           corrupted.set(contentBytes);
           corrupted[0] = corrupted[0] ^ 0xff; // Flip first byte
           await demoState.storage.put(contentHash, corrupted);
-          faultDiv.innerHTML = `<div class="info-box warning">Content byte 0 flipped (${contentHash.substring(0, 32)}...). Re-resolve to see the error.</div>`;
+
+          // Verify corruption persisted
+          const verify = await demoState.storage.get(contentHash);
+          const persisted = verify && verify[0] === corrupted[0];
+          const computedHash = await crypto.hash(corrupted);
+
+          faultDiv.innerHTML = `<div class="info-box warning">
+            Content byte 0 flipped: 0x${originalByte0.toString(16).padStart(2, "0")} → 0x${corrupted[0].toString(16).padStart(2, "0")}<br>
+            <span style="font-size:0.75rem">Hash: ${contentHash.substring(0, 40)}...<br>
+            Stored: ${persisted ? "✓ verified" : "✗ NOT persisted"}<br>
+            New hash: ${computedHash.substring(0, 40)}...<br>
+            Re-resolve to see the error.</span>
+          </div>`;
         } else {
           faultDiv.innerHTML = `<div class="info-box error">Content not found at hash: ${contentHash?.substring(0, 32)}...</div>`;
         }
