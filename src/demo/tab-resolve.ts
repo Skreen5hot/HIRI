@@ -461,7 +461,8 @@ async function injectFault(type: "content" | "signature" | "remove"): Promise<vo
           const originalByte0 = contentBytes[0];
           const corrupted = new Uint8Array(contentBytes.length);
           corrupted.set(contentBytes);
-          corrupted[0] = corrupted[0] ^ 0xff; // Flip first byte
+          // Use increment (not XOR) — XOR is its own inverse, so double-click restores original
+          corrupted[0] = (corrupted[0] + 1) & 0xff;
           await demoState.storage.put(contentHash, corrupted);
 
           // Verify corruption persisted
