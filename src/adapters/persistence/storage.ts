@@ -26,6 +26,11 @@ export class InMemoryStorageAdapter implements StorageAdapter {
     this.store.set(hash, bytes);
   }
 
+  /** Remove a single entry by hash. For fault injection. */
+  delete(hash: string): boolean {
+    return this.store.delete(hash);
+  }
+
   /** Clear all stored data. For testing. */
   clear(): void {
     this.store.clear();

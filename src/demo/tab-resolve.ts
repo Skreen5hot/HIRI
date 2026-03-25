@@ -486,10 +486,9 @@ async function injectFault(type: "content" | "signature" | "remove"): Promise<vo
         break;
       }
       case "remove": {
-        // Remove manifest from storage by storing null-length
-        // We can't truly "remove" from InMemoryStorageAdapter, so store empty
-        await demoState.storage.put(manifestHash, new Uint8Array(0));
-        faultDiv.innerHTML = `<div class="info-box warning">Manifest zeroed out. Re-resolve to see the error.</div>`;
+        // Delete manifest from storage entirely
+        demoState.storage.delete(manifestHash);
+        faultDiv.innerHTML = `<div class="info-box warning">Manifest removed from storage. Re-resolve to see the error.</div>`;
         break;
       }
     }
