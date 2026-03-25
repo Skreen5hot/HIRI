@@ -435,14 +435,26 @@ let encManifestHash: string | null = null;
 let encStorage: InMemoryStorageAdapter | null = null;
 
 function wireEncryptedPanel(): void {
-  document.getElementById("enc-recipients")!.innerHTML = recipientListHTML(true);
+  renderEncRecipients();
   document.getElementById("btn-enc-encrypt")!.addEventListener("click", handleEncrypt);
   document.getElementById("btn-enc-export")!.addEventListener("click", () => handlePrivacyExport("encrypted", encStorage, encManifestHash, encManifest));
   document.getElementById("btn-enc-add-recipient")!.addEventListener("click", () => {
     const name = `recipient-${demoState.privacyRecipients.length + 1}`;
     const kp = generateX25519Keypair();
     demoState.privacyRecipients.push({ id: name, x25519Public: kp.publicKey, x25519Private: kp.privateKey });
-    document.getElementById("enc-recipients")!.innerHTML = recipientListHTML(true);
+    renderEncRecipients();
+  });
+}
+
+function renderEncRecipients(): void {
+  const el = document.getElementById("enc-recipients")!;
+  el.innerHTML = recipientListHTML(true);
+  el.querySelectorAll(".btn-remove-recipient").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt((btn as HTMLButtonElement).dataset.idx!);
+      demoState.privacyRecipients.splice(idx, 1);
+      renderEncRecipients();
+    });
   });
 }
 
