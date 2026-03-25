@@ -500,9 +500,14 @@ async function resetStorage(): Promise<void> {
 
   if (importedPackageJson) {
     // Re-import from saved package (imported data isn't in demoState.manifests)
-    await importPackage(importedPackageJson);
-    document.getElementById("fault-result")!.innerHTML =
-      `<div class="info-box success">Storage reset to clean state (re-imported package).</div>`;
+    try {
+      await importPackage(importedPackageJson);
+      document.getElementById("fault-result")!.innerHTML =
+        `<div class="info-box success">Storage reset to clean state (re-imported package).</div>`;
+    } catch (e) {
+      document.getElementById("fault-result")!.innerHTML =
+        `<div class="info-box error">Reset failed: ${(e as Error).message}</div>`;
+    }
   } else {
     // Rebuild from local manifest entries
     for (const entry of demoState.manifests) {
@@ -511,6 +516,13 @@ async function resetStorage(): Promise<void> {
     }
     document.getElementById("fault-result")!.innerHTML =
       `<div class="info-box success">Storage reset to clean state.</div>`;
+  }
+
+  // Re-enable Import button so user can re-import if needed
+  const importBtn = document.getElementById("btn-import") as HTMLButtonElement | null;
+  if (importBtn) {
+    importBtn.disabled = false;
+    importBtn.textContent = "Import & Load";
   }
 }
 
