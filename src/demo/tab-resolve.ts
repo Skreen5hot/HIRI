@@ -457,11 +457,14 @@ async function injectFault(type: "content" | "signature" | "remove"): Promise<vo
       case "content": {
         // Flip one byte in stored content
         const contentBytes = await demoState.storage.get(contentHash);
-        if (contentBytes) {
-          const corrupted = new Uint8Array(contentBytes);
+        if (contentBytes && contentBytes.length > 0) {
+          const corrupted = new Uint8Array(contentBytes.length);
+          corrupted.set(contentBytes);
           corrupted[0] = corrupted[0] ^ 0xff; // Flip first byte
           await demoState.storage.put(contentHash, corrupted);
-          faultDiv.innerHTML = `<div class="info-box warning">Content byte 0 flipped. Re-resolve to see the error.</div>`;
+          faultDiv.innerHTML = `<div class="info-box warning">Content byte 0 flipped (${contentHash.substring(0, 32)}...). Re-resolve to see the error.</div>`;
+        } else {
+          faultDiv.innerHTML = `<div class="info-box error">Content not found at hash: ${contentHash?.substring(0, 32)}...</div>`;
         }
         break;
       }
