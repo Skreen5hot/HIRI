@@ -43,10 +43,14 @@ export async function signManifest(
   canonicalizer?: Canonicalizer,
   documentLoader?: DocumentLoader,
 ): Promise<ResolutionManifest> {
-  // Profile Symmetry Rule: content.canonicalization must match signing profile
-  if (unsigned["hiri:content"].canonicalization !== profile) {
+  // Profile Symmetry Rule: content.canonicalization must match signing profile.
+  // Exception: "none" indicates opaque content (raw bytes, no canonicalization);
+  // the manifest itself is still signed under JCS.
+  const contentCanon = unsigned["hiri:content"].canonicalization;
+  const opaqueContent = contentCanon === "none" && profile === "JCS";
+  if (!opaqueContent && contentCanon !== profile) {
     throw new Error(
-      `Profile symmetry violation: content declares "${unsigned["hiri:content"].canonicalization}" but signing with "${profile}"`
+      `Profile symmetry violation: content declares "${contentCanon}" but signing with "${profile}"`
     );
   }
   const canon = resolveCanonicalizer(profile, canonicalizer);
@@ -99,8 +103,10 @@ export async function verifyManifest(
   const signature = manifest["hiri:signature"];
   if (!signature) return false;
 
-  // Profile Symmetry check
-  if (signature.canonicalization !== manifest["hiri:content"].canonicalization) {
+  // Profile Symmetry check (with "none" exception for opaque content).
+  const contentCanon = manifest["hiri:content"].canonicalization;
+  const opaqueContent = contentCanon === "none" && signature.canonicalization === "JCS";
+  if (!opaqueContent && signature.canonicalization !== contentCanon) {
     return false;
   }
   if (signature.canonicalization !== profile) {

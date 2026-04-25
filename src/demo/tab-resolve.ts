@@ -331,7 +331,10 @@ async function handleResolve(): Promise<void> {
           ${getPrivacyBadges(result.manifest)}
         </div>
         <div class="panel">
-          <div class="panel-header">Verified Content (V${result.manifest["hiri:version"]})</div>
+          <div class="panel-header">
+            Verified Content (V${result.manifest["hiri:version"]})
+            <span style="font-size:0.7rem;font-weight:400;color:var(--text-muted);margin-left:0.5rem;padding:0.1rem 0.4rem;border:1px solid var(--border);border-radius:3px">${escapeHTML(String(result.manifest["hiri:content"]?.format ?? "unknown"))}</span>
+          </div>
           <div class="panel-body">
             ${renderVerifiedContent(contentStr)}
           </div>

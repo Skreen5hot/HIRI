@@ -99,7 +99,7 @@ export interface ManifestContent {
   addressing: string; // "raw-sha256" | "cidv1-dag-cbor"
   format: string; // MIME type, e.g., "application/ld+json"
   size: number; // Byte count
-  canonicalization: string; // "JCS" | "URDNA2015"
+  canonicalization: string; // "JCS" | "URDNA2015" | "none" — "none" means opaque content (raw bytes); manifest itself is still signed under JCS
 }
 
 /** Chain link to previous manifest (absent for genesis). */
